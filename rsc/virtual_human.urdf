@@ -425,22 +425,22 @@
 
     <link name="lwrist">
       <inertial>
-        <origin xyz="0.02228 0 0" rpy="0 0 0"/>
+        <origin xyz="0.04228 0 0" rpy="0 0 0"/>
         <mass value="0.5"/>
         <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
       </inertial>
       <collision name="collision_0_lwrist">
-        <origin xyz="0.02228 0 0" rpy="0 0 0"/>
+        <origin xyz="0.04228 0 0" rpy="0 0 0"/>
         <geometry>
-          <sphere radius="0.04"/>
-          <!-- <box size="0.04 0.04 0.04" /> -->
+          <!-- <sphere radius="0.04"/> -->
+          <box size="0.08 0.04 0.08" />
         </geometry>
       </collision>
       <visual name="visual_0_lwrist">
-        <origin xyz="0.02228 0 0" rpy="0 0 0"/>
+        <origin xyz="0.04228 0 0" rpy="0 0 0"/>
         <geometry>
-          <sphere radius="0.04"/>
-          <!-- <box size="0.04 0.04 0.04" /> -->
+          <!-- <sphere radius="0.04"/> -->
+          <box size="0.08 0.04 0.08" />
         </geometry>
       </visual>
     </link>
@@ -529,20 +529,22 @@
 
     <link name="rwrist">
       <inertial>
-        <origin xyz="-0.0239 0 0" rpy="0 0 0"/>
+        <origin xyz="-0.0439 0 0" rpy="0 0 0"/>
         <mass value="0.5"/>
         <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
       </inertial>
       <collision name="collision_0_rwrist">
-        <origin xyz="-0.0239 0 0" rpy="0 0 0"/>
+        <origin xyz="-0.0439 0 0" rpy="0 0 0"/>
         <geometry>
-          <sphere radius="0.04"/>
+          <!-- <sphere radius="0.04"/> -->
+          <box size="0.08 0.04 0.08" />
         </geometry>
       </collision>
       <visual name="visual_0_rwrist">
-        <origin xyz="-0.0239 0 0" rpy="0 0 0"/>
+        <origin xyz="-0.0439 0 0" rpy="0 0 0"/>
         <geometry>
-          <sphere radius="0.04"/>
+          <!-- <sphere radius="0.04"/> -->
+          <box size="0.08 0.04 0.08" />
         </geometry>
       </visual>
     </link>
