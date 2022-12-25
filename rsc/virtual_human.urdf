@@ -57,20 +57,12 @@
         <geometry>
           <capsule radius="0.05" length="0.3"/>
         </geometry>
-        <!-- <origin xyz="0.02173 -0.19323 0.00402" rpy="0 0 0"/>
-        <geometry>
-          <box size="0.08 0.3 0.08"/>
-        </geometry> -->
       </collision>
       <visual name="visual_0_lhip">
         <origin xyz="0.02173 -0.19323 0.00402" rpy="1.55 0.11194 0.10964"/>
         <geometry>
           <capsule radius="0.05" length="0.3"/>
         </geometry>
-        <!-- <origin xyz="0.02173 -0.19323 0.00402" rpy="0 0 0"/>
-        <geometry>
-          <box size="0.08 0.3 0.08"/>
-        </geometry> -->
       </visual>
     </link>
 
@@ -80,25 +72,17 @@
         <mass value="3.0"/>
         <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
       </inertial>
-      <collision name="collision_0_lknee">
+      <!-- <collision name="collision_0_lknee">
         <origin xyz="-0.00739 -0.21344 -0.01871" rpy="1.65825 -0.0345 -0.03766"/>
         <geometry>
           <capsule radius="0.05" length="0.325"/>
         </geometry>
-        <!-- <origin xyz="-0.00739 -0.21344 -0.01871" rpy="0 0 0"/>
-        <geometry>
-          <box size="0.08 0.35 0.08"/>
-        </geometry> -->
-      </collision>
+      </collision> -->
       <visual name="visual_0_lknee">
         <origin xyz="-0.00739 -0.21344 -0.01871" rpy="1.65825 -0.0345 -0.03766"/>
         <geometry>
           <capsule radius="0.05" length="0.325"/>
         </geometry>
-        <!-- <origin xyz="-0.00739 -0.21344 -0.01871" rpy="0 0 0"/>
-        <geometry>
-          <box size="0.08 0.35 0.08"/>
-        </geometry> -->
       </visual>
     </link>
 
@@ -145,20 +129,12 @@
         <geometry>
           <capsule radius="0.05" length="0.3"/>
         </geometry>
-        <!-- <origin xyz="-0.02163 -0.19184 -0.00242" rpy="0 0 0"/>
-        <geometry>
-          <box size="0.08 0.3 0.08"/>
-        </geometry> -->
       </collision>
       <visual name="visual_0_rhip">
         <origin xyz="-0.02163 -0.19184 -0.00242" rpy="1.58342 -0.11226 -0.11368"/> 
         <geometry>
           <capsule radius="0.05" length="0.3"/>
         </geometry>
-        <!-- <origin xyz="-0.02163 -0.19184 -0.00242" rpy="0 0 0"/>
-        <geometry>
-          <box size="0.08 0.3 0.08"/>
-        </geometry> -->
       </visual>
     </link>
 
@@ -168,25 +144,17 @@
         <mass value="3.0"/>
         <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
       </inertial>
-      <collision name="collision_0_rknee">
+      <!-- <collision name="collision_0_rknee">
         <origin xyz="0.00953 -0.21002 -0.01728" rpy="1.65289 0.04518 0.04905"/>
         <geometry>
           <capsule radius="0.05" length="0.325"/>
         </geometry>
-        <!-- <origin xyz="0.00953 -0.21002 -0.01728" rpy="0 0 0"/>
-        <geometry>
-          <box size="0.08 0.35 0.08"/>
-        </geometry> -->
-      </collision>
+      </collision> -->
       <visual name="visual_0_rknee">
         <origin xyz="0.00953 -0.21002 -0.01728" rpy="1.65289 0.04518 0.04905"/>
         <geometry>
           <capsule radius="0.05" length="0.325"/>
         </geometry>
-        <!-- <origin xyz="0.00953 -0.21002 -0.01728" rpy="0 0 0"/>
-        <geometry>
-          <box size="0.08 0.35 0.08"/>
-        </geometry> -->
       </visual>
     </link>
 
@@ -228,12 +196,12 @@
         <mass value="2.0"/>
         <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
       </inertial>
-      <!-- <collision name="collision_0_lowerback">
+      <collision name="collision_0_lowerback">
         <origin xyz="0.0 0.06 0.013" rpy="0 1.5708 0"/>
         <geometry>
           <sphere radius="0.065"/>
         </geometry>
-      </collision> -->
+      </collision>
       <visual name="visual_0_lowerback">
         <origin xyz="0.0 0.06 0.013" rpy="0 1.5708 0"/>
         <geometry>
@@ -260,12 +228,12 @@
         <mass value="2.0"/>
         <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
       </inertial>
-    <!--   <collision name="collision_0_upperback">
+      <collision name="collision_0_upperback">
         <origin xyz="0.0 0.03246 0.00143" rpy="0 1.5708 0"/>
         <geometry>
           <sphere radius="0.05" length="0.125"/>
         </geometry>
-      </collision> -->
+      </collision>
       <visual name="visual_0_upperback">
         <origin xyz="0.0 0.03246 0.00143" rpy="0 1.5708 0"/>
         <geometry>
@@ -280,24 +248,24 @@
         <mass value="4.0"/>
         <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
       </inertial>
-      <!-- <collision name="collision_0_chest">
+      <collision name="collision_0_chest">
         <origin xyz="-0.045 0.057 -0.00687" rpy="0 0 0"/>
         <geometry>
           <sphere radius="0.07"/>
         </geometry>
-      </collision> -->
+      </collision>
       <visual name="visual_0_chest">
         <origin xyz="-0.045 0.057 -0.00687" rpy="0 0 0"/>
         <geometry>
           <sphere radius="0.07"/>
         </geometry>
       </visual>
-      <!-- <collision name="collision_1_chest">
+      <collision name="collision_1_chest">
         <origin xyz="0.045 0.057 -0.00687" rpy="0 0 0"/>
         <geometry>
           <sphere radius="0.07"/>
         </geometry>
-      </collision> -->
+      </collision>
       <visual name="visual_1_chest">
         <origin xyz="0.045 0.057 -0.00687" rpy="0 0 0"/>
         <geometry>
@@ -312,12 +280,12 @@
         <mass value="0.5"/>
         <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
       </inertial>
-     <!--  <collision name="collision_0_lowerneck">
+      <collision name="collision_0_lowerneck">
         <origin xyz="0.0 -0.01296 0.01" rpy="1.5708 0 0"/>
         <geometry>
           <capsule radius="0.030" length="0.0273"/>
         </geometry>
-      </collision> -->
+      </collision>
       <visual name="visual_0_lowerneck">
         <origin xyz="0.0 -0.01296 0.01" rpy="1.5708 0 0"/>
         <geometry>
@@ -332,12 +300,12 @@
         <mass value="3.0"/>
         <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
       </inertial>
-      <!-- <collision name="collision_0_upperneck">
+      <collision name="collision_0_upperneck">
         <origin xyz="0 0.0020 0" rpy="1.5708 0 0"/>
         <geometry>
           <capsule radius="0.06" length="0.035"/>
         </geometry>
-      </collision> -->
+      </collision>
       <visual name="visual_0_upperneck">
         <origin xyz="0 0.0020 0" rpy="1.5708 0 0"/>
         <geometry>
