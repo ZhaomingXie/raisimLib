@@ -27,15 +27,12 @@ class RaisimGymVecEnv:
         self._reward = np.zeros(self.num_envs, dtype=np.float32)
         self._done = np.zeros(self.num_envs, dtype=np.bool)
         self.rewards = [[] for _ in range(self.num_envs)]
-<<<<<<< HEAD
         self.observation_space = np.zeros(self.num_obs)
         self.action_space = np.zeros(self.num_acts)
-=======
         self.wrapper.setSeed(seed)
         self.count = 0.0
         self.mean = np.zeros(self.num_obs, dtype=np.float32)
         self.var = np.zeros(self.num_obs, dtype=np.float32)
->>>>>>> official/master
 
     def seed(self, seed=None):
         self.wrapper.setSeed(seed)
@@ -88,7 +85,6 @@ class RaisimGymVecEnv:
     @property
     def num_envs(self):
         return self.wrapper.getNumOfEnvs()
-<<<<<<< HEAD
 
 
 class RunningMeanStd(object):
@@ -259,5 +255,3 @@ class RaisimGymVecTorchEnv:
     def num_envs(self):
         return self.wrapper.getNumOfEnvs()
 
-=======
->>>>>>> official/master
