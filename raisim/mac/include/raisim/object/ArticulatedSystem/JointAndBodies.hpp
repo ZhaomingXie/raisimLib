@@ -6,10 +6,13 @@
 #ifndef RAISIM_JOINTANDBODIES_HPP
 #define RAISIM_JOINTANDBODIES_HPP
 
+#include <unordered_map>
+
 #include "ode/ode.h"
+
 #include "raisim/math.hpp"
 #include "raisim/object/singleBodies/Mesh.hpp"
-#include <unordered_map>
+#include "raisim/sensors/Sensors.hpp"
 
 namespace raisim {
 
@@ -22,8 +25,7 @@ class LoadFromURDF2;
 
 /* shapes that raisim supports */
 namespace Shape {
-enum Type :
-    int {
+enum Type : int {
   Box = 0,
   Cylinder,
   Sphere,
@@ -31,6 +33,12 @@ enum Type :
   Capsule,
   Cone, // cone is not currently supported
   Ground,
+  CoordinateFrame,
+  Arrow,
+  RotationalArrow,
+  HeightMap,
+  PolyLine,
+  SingleLine,
   NotShape
 };
 
@@ -108,7 +116,7 @@ struct VisObject {
    * vis_name: name of the visualized body,
    * vis_material: material */
   VisObject(Shape::Type vis_shape,
-            const std::vector<double> &vis_shapeParam,
+            const raisim::Vec<4> &vis_shapeParam,
             const raisim::Vec<3> &vis_origin,
             const raisim::Mat<3, 3> &vis_rotMat,
             const raisim::Vec<4> &vis_color,
@@ -152,7 +160,7 @@ struct VisObject {
    * vis_name: name of the visualized body,
    * vis_material: material */
   VisObject(Shape::Type vis_shape,
-            const std::vector<double> &vis_shapeParam,
+            const raisim::Vec<4> &vis_shapeParam,
             const raisim::Vec<3> &vis_origin,
             const raisim::Mat<3, 3> &vis_rotMat,
             const raisim::Vec<4> &vis_color,
@@ -166,7 +174,7 @@ struct VisObject {
   }
 
   Shape::Type shape;
-  std::vector<double> visShapeParam;
+  raisim::Vec<4> visShapeParam;
   raisim::Vec<3> offset;
   raisim::Mat<3, 3> rot;
   raisim::Vec<4> color;
@@ -266,6 +274,7 @@ class Joint {
   double damping = 0.0, friction = 0.0;
   double stiffness = 0.;
   double rotor_inertia = 0.;
+  double velocity_limit = 0.;
   Vec<4> springMount;
   double jointRef = 0.;
   std::string name;
@@ -299,7 +308,7 @@ struct CollisionBody {
    * col_material: collision material that defines contact physics
    * col_visualizedMaterial: how the collision body should be visualized */
   CollisionBody(Shape::Type col_shape,
-                const std::vector<double> &col_shapeParam,
+                const Vec<4> &col_shapeParam,
                 const raisim::Vec<3> &col_origin,
                 const raisim::Mat<3, 3> &col_rotMat,
                 const std::string &col_name,
@@ -332,7 +341,7 @@ struct CollisionBody {
 
   Shape::Type shape;
   raisim::Vec<3> scale;
-  std::vector<double> shapeParam;
+  raisim::Vec<4> shapeParam;
   raisim::Vec<3> offset;
   raisim::Mat<3, 3> rot;
   std::string name;
@@ -356,7 +365,7 @@ struct CollisionBody {
    * col_visualizedMaterial: how the collision body should be visualized
    * col_meshFile: file location relative to the resource directory of the articulated system */
   CollisionBody(Shape::Type col_shape,
-                const std::vector<double> &col_shapeParam,
+                const Vec<4> &col_shapeParam,
                 const raisim::Vec<3> &col_origin,
                 const raisim::Mat<3, 3> &col_rotMat,
                 const raisim::Vec<3> &col_meshScale,
@@ -371,7 +380,7 @@ struct CollisionBody {
 };
 
 inline void getInertialAssumingUniformDensity(Shape::Type shape,
-                                       const std::vector<double> &shapeParam,
+                                       const Vec<4> &shapeParam,
                                        const Mat<3,3>& rot,
                                        double density,
                                        double &mass,
@@ -515,7 +524,7 @@ class Body {
 
   void
   addCollisionObject(Shape::Type shape,
-                     const std::vector<double> &param,
+                     const Vec<4> &param,
                      const raisim::Vec<3> &origin,
                      const raisim::Mat<3, 3> &rot,
                      const raisim::Vec<3> &scale,
@@ -537,7 +546,7 @@ class Body {
   }
 
   void addVisualObject(Shape::Type shape,
-                       const std::vector<double> &shapeParam,
+                       const Vec<4> &shapeParam,
                        const raisim::Vec<3> &origin,
                        const raisim::Mat<3, 3> &rotMat,
                        const raisim::Vec<4> &color,
@@ -561,6 +570,7 @@ class Body {
   double mass_;
   Mat<3, 3> inertia_;
   Vec<3> com_;
+  std::vector<std::shared_ptr<Sensor>> sensor;
 };
 
 class Child {
@@ -618,6 +628,8 @@ class Child {
   void consumeFixedBodies(std::vector<CoordinateFrame> &frameOfInterest);
 
   void processJointRef();
+
+  void changeParent(Child &ch, Child &gch);
 
   void addChild(const Child &childNode) {
     if (childNode.joint.type == Joint::Type::FIXED) {

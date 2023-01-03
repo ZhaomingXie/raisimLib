@@ -23,93 +23,52 @@ world.setTimeStep(0.001)
 server = raisim.RaisimServer(world)
 ground = world.addGround()
 
-# anymal = world.addArticulatedSystem(anymal_urdf_file)
-# anymal.setName("anymal")
-# anymal_nominal_joint_config = np.array([0, -1.5, 0.54, 1.0, 0.0, 0.0, 0.0, 0.03, 0.4, -0.8,
-#                                         -0.03, 0.4, -0.8, 0.03, -0.4, 0.8, -0.03, -0.4, 0.8])
-# anymal.setGeneralizedCoordinate(anymal_nominal_joint_config)
-# anymal.setPdGains(200*np.ones([18]), np.ones([18]))
-# anymal.setPdTarget(anymal_nominal_joint_config, np.zeros([18]))
+anymal = world.addArticulatedSystem(anymal_urdf_file)
+anymal.setName("anymal")
+anymal_nominal_joint_config = np.array([0, -1.5, 0.54, 1.0, 0.0, 0.0, 0.0, 0.03, 0.4, -0.8,
+                                        -0.03, 0.4, -0.8, 0.03, -0.4, 0.8, -0.03, -0.4, 0.8])
+anymal.setGeneralizedCoordinate(anymal_nominal_joint_config)
+anymal.setPdGains(200*np.ones([18]), np.ones([18]))
+anymal.setPdTarget(anymal_nominal_joint_config, np.zeros([18]))
 
-# laikago = world.addArticulatedSystem(laikago_urdf_file)
-# laikago.setName("laikago")
-# laikago_nominal_joint_config = np.array([0, 1.5, 0.48, 1, 0.0, 0.0, 0.0, 0.0, 0.5, -1, 0, 0.5, -1,
-#                                          0.00, 0.5, -1, 0, 0.5, -0.7])
-# laikago.setGeneralizedCoordinate(laikago_nominal_joint_config)
-# laikago.setPdGains(200*np.ones([18]), np.ones([18]))
-# laikago.setPdTarget(laikago_nominal_joint_config, np.zeros([18]))
+laikago = world.addArticulatedSystem(laikago_urdf_file)
+laikago.setName("laikago")
+laikago_nominal_joint_config = np.array([0, 1.5, 0.48, 1, 0.0, 0.0, 0.0, 0.0, 0.5, -1, 0, 0.5, -1,
+                                         0.00, 0.5, -1, 0, 0.5, -0.7])
+laikago.setGeneralizedCoordinate(laikago_nominal_joint_config)
+laikago.setPdGains(200*np.ones([18]), np.ones([18]))
+laikago.setPdTarget(laikago_nominal_joint_config, np.zeros([18]))
 
-# atlas = world.addArticulatedSystem(atlas_urdf_file)
-# atlas.setName("atlas")
-# atlas_nominal_joint_config = np.zeros(atlas.getGeneralizedCoordinateDim())
-# atlas_nominal_joint_config[2] = 1.5
-# atlas_nominal_joint_config[3] = 1
-# atlas.setGeneralizedCoordinate(atlas_nominal_joint_config)
+atlas = world.addArticulatedSystem(atlas_urdf_file)
+atlas.setName("atlas")
+atlas_nominal_joint_config = np.zeros(atlas.getGeneralizedCoordinateDim())
+atlas_nominal_joint_config[2] = 1.5
+atlas_nominal_joint_config[3] = 1
+atlas.setGeneralizedCoordinate(atlas_nominal_joint_config)
 
-# solo8 = world.addArticulatedSystem(solo8_urdf_file)
-# solo8.setName("solo8")
-# solo8_nominal_joint_config = np.zeros(solo8.getGeneralizedCoordinateDim())
-# print(solo8_nominal_joint_config)
-# solo8_nominal_joint_config[0] = 5
-# solo8_nominal_joint_config[2] = 0.35
-# solo8_nominal_joint_config[3] = 1
-# solo8.setGeneralizedCoordinate(solo8_nominal_joint_config)
-# solo8.setPdGains(2*np.ones([14]), 0.2*np.ones([14]))
-# solo8.setPdTarget(solo8_nominal_joint_config, np.zeros([14]))
+server.launchServer(8080)
 
-# virtual_human = world.addArticulatedSystem(virtual_human_urdf_file)
-# virtual_human.setName("virtual_human")
-# virtual_human_nominal_joint_config = np.array([0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1.,
-#  0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1.,
-#  0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1.,
-#  0., 0., 0.,])
-# print(virtual_human.getGeneralizedCoordinateDim())
-# print(virtual_human.getDOF())
-# virtual_human_nominal_joint_config[0] = 0
-# virtual_human_nominal_joint_config[2] = 2
-# virtual_human.setGeneralizedCoordinate(virtual_human_nominal_joint_config)
-# virtual_human.setPdGains(2*np.ones([virtual_human.getDOF()]), 0.2*np.ones([virtual_human.getDOF()]))
-# virtual_human.setPdTarget(virtual_human_nominal_joint_config, np.zeros([virtual_human.getDOF()]))
+for i in range(5):
+    for j in range(5):
+        object_type = (i + j*6) % 5
 
-walker = world.addArticulatedSystem(walker_urdf_file)
-walker.setName("walker")
-print(walker.getGeneralizedCoordinate())
-walker_nominal_joint_config = np.zeros(walker.getGeneralizedCoordinateDim())
-walker_nominal_joint_config[:] = [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0,
- 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0]
-print(walker.getGeneralizedCoordinateDim())
-walker_nominal_joint_config[2] = 1.707
-walker_nominal_joint_config[3] = 0.707
-walker_nominal_joint_config[4] = 0.707
+        if object_type == 0:
+            obj = world.addMesh(monkey_file, 5.0, dummy_inertia, np.array([0, 0, 0]), 0.3)
+            obj.setAppearance("blue")
+        elif object_type == 1:
+            obj = world.addCylinder(0.2, 0.3, 2.0)
+            obj.setAppearance("red")
+        elif object_type == 2:
+            obj = world.addCapsule(0.2, 0.3, 2.0)
+            obj.setAppearance("green")
+        elif object_type == 3:
+            obj = world.addBox(0.4, 0.4, 0.4, 2.0)
+            obj.setAppearance("purple")
+        else:
+            obj = world.addSphere(0.3, 2.0)
+            obj.setAppearance("orange")
 
-walker.setGeneralizedCoordinate(walker_nominal_joint_config)
-walker.setPdGains(0*np.ones([walker.getDOF()]), 0*np.ones([walker.getDOF()]))
-
-world.setMaterialPairProp("default", "ball", 1.0, 0.8, 0.01)
-obj = world.addSphere(0.11, 0.45, material="ball")
-obj.setPosition(0., 0, 4)
-
-server.launchServer(8081)
-# obj = world.addSphere(0.2, 0.8)
-# obj.setPosition(0, 0, 0.2)
-# import ipdb; ipdb.set_trace()
-
-# for i in range(5):
-#     for j in range(5):
-#         object_type = (i + j*6) % 5
-
-#         if object_type == 0:
-#             obj = world.addMesh(monkey_file, 5.0, dummy_inertia, np.array([0, 0, 0]), 0.3)
-#         elif object_type == 1:
-#             obj = world.addCylinder(0.2, 0.3, 2.0)
-#         elif object_type == 2:
-#             obj = world.addCapsule(0.2, 0.3, 2.0)
-#         elif object_type == 3:
-#             obj = world.addBox(0.4, 0.4, 0.4, 2.0)
-#         else:
-#             obj = world.addSphere(0.3, 2.0)
-
-#         obj.setPosition(i-2.5, j-2.5, 5)
+        obj.setPosition(i-2.5, j-2.5, 5)
 
 time.sleep(2)
 world.integrate1()
@@ -214,7 +173,6 @@ while True:
 	np.savetxt('data.txt', record_data, fmt='%f')
 
 for i in range(500000):
-    time.sleep(0.001)
-    world.integrate()
+    server.integrateWorldThreadSafe()
 
 server.killServer()
