@@ -47,6 +47,8 @@ class VectorizedEnvironment {
       rewardInformation_.push_back(environments_.back()->getRewards().getStdMap());
     }
 
+    setEnvironmentTask();
+
     setSeed(0);
 
     for (int i = 0; i < num_envs_; i++) {
@@ -68,7 +70,8 @@ class VectorizedEnvironment {
   }
 
   void done_reset(Eigen::Ref<EigenBoolVec> &done){
-#pragma omp parallel for schedule(auto)
+// #pragma omp parallel for schedule(auto)
+  #pragma omp parallel for schedule(dynamic, 1)
     for (int i = 0; i < num_envs_; i++) {
       if (done[i])
         environments_[i]->reset();
@@ -90,7 +93,8 @@ class VectorizedEnvironment {
   void step(Eigen::Ref<EigenRowMajorMat> &action,
             Eigen::Ref<EigenVec> &reward,
             Eigen::Ref<EigenBoolVec> &done) {
-#pragma omp parallel for schedule(auto)
+// #pragma omp parallel for schedule(auto)
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < num_envs_; i++)
       perAgentStep(i, action, reward, done);
   }
@@ -130,6 +134,7 @@ class VectorizedEnvironment {
   }
 
   void isTerminalState(Eigen::Ref<EigenBoolVec>& terminalState) {
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < num_envs_; i++) {
       float terminalReward;
       terminalState[i] = environments_[i]->isTerminalState(terminalReward);
@@ -137,6 +142,7 @@ class VectorizedEnvironment {
   }
 
   void timeLimitReset(Eigen::Ref<EigenBoolVec> &done) {
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < num_envs_; i++) {
       done[i] = environments_[i]->time_limit_reached();
       if (environments_[i]->time_limit_reached())
@@ -193,10 +199,10 @@ class VectorizedEnvironment {
     float terminalReward = 0;
     done[agentId] = environments_[agentId]->isTerminalState(terminalReward);
 
-    if (done[agentId]) {
-      environments_[agentId]->reset();
-      reward[agentId] += terminalReward;
-    }
+    // if (done[agentId]) {
+    //   environments_[agentId]->reset();
+    //   reward[agentId] += terminalReward;
+    // }
   }
 
   std::vector<ChildEnvironment *> environments_;
