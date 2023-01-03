@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<robot name="ball2D">
+	<link name="world"/>
+	
+  <link name="ball">
+    <visual>
+      <origin rpy="0 0 1.57" xyz="0 0 0"/>
+      <geometry>
+        <!-- <sphere radius="0.11"/> -->
+        <box size="0.4500 0.47000 0.50000" />
+        <!-- <capsule length="0.030000" radius="0.0835000"/> -->
+        <!-- <mesh filename="american_football.stl" /> -->
+        <!-- <cylinder radius="0.06" length="0.11"/> -->
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 1.57" xyz = "0 0 0"/>   <!-- 0 0 1.57 for american football -->
+      <geometry>
+        <!-- <sphere radius="0.11"/> -->
+       <box size="0.450 0.47000 0.50000" />
+       <!-- <capsule length="0.030000" radius="0.0835000"/> -->
+       <!-- <mesh filename="american_football.obj" /> -->
+      </geometry>
+      <material name="">
+        <contact name="ball"/>
+      </material>
+    </collision>
+    <inertial>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <mass value="2.0"/>
+         <!-- https://www.miniphysics.com/uy1-calculation-of-moment-of-inertia-of-thin-spherical-shell.html -->
+        <inertia ixx="0.043" ixy="0.0" ixz="0" iyy="0.043" iyz="0" izz="0.043"/>  <!-- ball value -->
+        <!-- <inertia ixx="0.0033" ixy="0.0" ixz="0" iyy="0.0043" iyz="0" izz="0.0033"/>  merican football value --> -->
+        <!-- <inertia ixx="0.03" ixy="0.0" ixz="0" iyy="0.03" iyz="0" izz="0.03"/> -->
+    </inertial>
+  </link>
+
+  <link name="base" >
+    <inertial>
+      <origin rpy = "0 0 0" xyz = "0 0 0" />
+      <mass value = "0.0001" />
+      <inertia ixx = "0.0001" ixy = "0" ixz = "0" iyy = "0.0001" iyz = "0" izz = "0.0001" />
+    </inertial>
+  </link>
+
+  <joint name="root" type="fixed" >
+    <parent link = "base" />
+    <child link="ball" />
+    <origin rpy = "0 0 0" xyz = "0.000000 0.000000 0.000000" />
+  </joint>
+</robot>

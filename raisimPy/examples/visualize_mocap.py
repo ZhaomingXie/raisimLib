@@ -254,6 +254,7 @@ def motion_matching_query(kd_tree, feature_mean, feature_std,
 	for i in range(3):
 		phase_amp[i] = np.sqrt(current_phase[i * 2]**2 + current_phase[i * 2 + 1]**2)
 		phase_offset[i] = np.arctan2(current_phase[i*2+1]/phase_amp[i], current_phase[i*2]/phase_amp[i])
+
 	for i in range(num_phase_matched_frames):
 		for j in range(3):
 			noise = np.random.randn(1)[0] * 2
@@ -320,12 +321,16 @@ phase1 = np.loadtxt("NSM_phase/RunRandom.bvh/Phases_Standard.txt")[:, :]
 phase2 = np.loadtxt("NSM_phase/WalkTurn1.bvh/Phases_Standard.txt")[:, :]
 phase3 = np.loadtxt("NSM_phase/WalkRandom.bvh/Phases_Standard.txt")[:, :]
 phase4 = np.loadtxt("NSM_phase/WalkSideBack1.bvh/Phases_Standard.txt")[:, :]
+<<<<<<< HEAD
 phase5 = np.loadtxt("NSM_phase/RunSideBack1.bvh/Phases_Standard.txt")[:, :]
+=======
+>>>>>>> 0da051044f942005b2448389cbfb3235d52a32f4
 
 root_pos1, root_rot1, root_linear_vel1, root_angular_vel1, store_data1, bone_velocity1, local_matrix1, features1, bone_orientation1, phase1 = process_mocap("Loco/RunRandom.bvh", phase1)
 root_pos2, root_rot2, root_linear_vel2, root_angular_vel2, store_data2, bone_velocity2, local_matrix2, features2, bone_orientation2, phase2 = process_mocap("Loco/WalkTurn1.bvh", phase2)
 root_pos3, root_rot3, root_linear_vel3, root_angular_vel3, store_data3, bone_velocity3, local_matrix3, features3, bone_orientation3, phase3 = process_mocap("Loco/WalkRandom.bvh", phase3)
 root_pos4, root_rot4, root_linear_vel4, root_angular_vel4, store_data4, bone_velocity4, local_matrix4, features4, bone_orientation4, phase4 = process_mocap("Loco/WalkSideBack1.bvh", phase4)
+<<<<<<< HEAD
 root_pos5, root_rot5, root_linear_vel5, root_angular_vel5, store_data5, bone_velocity5, local_matrix5, features5, bone_orientation5, phase5 = process_mocap("Loco/RunSideBack1.bvh", phase5)
 
 root_pos = np.concatenate((root_pos1, root_pos2, root_pos3, root_pos4, root_pos5))
@@ -338,6 +343,20 @@ local_matrix = np.concatenate((local_matrix1, local_matrix2, local_matrix3, loca
 bone_orientation = np.concatenate((bone_orientation1, bone_orientation2, bone_orientation3, bone_orientation4, bone_orientation5))
 phase = np.concatenate((phase1, phase2, phase3, phase4, phase5))
 features = np.concatenate((features1, features2, features3, features4, features5))
+=======
+
+
+root_pos = np.concatenate((root_pos1, root_pos2, root_pos3, root_pos4))
+root_rot = np.concatenate((root_rot1, root_rot2, root_rot3, root_rot4))
+root_linear_vel = np.concatenate((root_linear_vel1, root_linear_vel2, root_linear_vel3, root_linear_vel4))
+root_angular_vel = np.concatenate((root_angular_vel1, root_angular_vel2, root_angular_vel3, root_angular_vel4))
+store_data = np.concatenate((store_data1, store_data2, store_data3, store_data4))
+bone_velocity = np.concatenate((bone_velocity1, bone_velocity2, bone_velocity3, bone_velocity4))
+local_matrix = np.concatenate((local_matrix1, local_matrix2, local_matrix3, local_matrix4))
+bone_orientation = np.concatenate((bone_orientation1, bone_orientation2, bone_orientation3, bone_orientation4))
+phase = np.concatenate((phase1, phase2, phase3, phase4))
+features = np.concatenate((features1, features2, features3, features4))
+>>>>>>> 0da051044f942005b2448389cbfb3235d52a32f4
 num_frames = root_pos.shape[0]
 
 print(features.shape, local_matrix.shape)
@@ -383,7 +402,11 @@ world_vel = np.zeros(3)
 
 #kd tree query
 current_root_pose = np.zeros(3)
+<<<<<<< HEAD
 desired_root_linear_velocity = np.array([0, 0, 2])
+=======
+desired_root_linear_velocity = np.array([0, 0, 0])
+>>>>>>> 0da051044f942005b2448389cbfb3235d52a32f4
 current_bone_pos = store_data[0, :, :].copy()
 current_bone_velocity = bone_velocity[0, :, :].copy()
 current_root_orientation = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
@@ -405,7 +428,11 @@ while True:
 	dist, ind = motion_matching_query(tree, feature_mean, feature_std, 
 		current_root_pose, current_root_orientation, current_bone_pos, current_bone_velocity, current_phase, 
 		desired_root_linear_velocity)
+<<<<<<< HEAD
 	# print(dist, ind)
+=======
+	print(dist, ind)
+>>>>>>> 0da051044f942005b2448389cbfb3235d52a32f4
 	for t in range(5):
 		# current_root_pose += desired_root_linear_velocity / 10
 		# current_root_orientation = current_root_orientation.dot(desired_root_delta_orientation)
@@ -424,7 +451,7 @@ while True:
 
 		current_bone_orientation = current_root_orientation.dot(bone_orientation[ind[0, 0], t+1, :])
 
-		weight = np.exp((t+1) * 1.0 / 30) / np.exp(1.0)
+		weight = np.exp((t+1) * 1.0 / 50) / np.exp(1.0)
 		previous_reference = set_human_pose(ind[0, 0], 1+t, current_bone_pos[0, :], current_bone_orientation, previous_reference, weight)
 
 		# save_reference[frame_counter, :] = reference.copy()
@@ -433,24 +460,37 @@ while True:
 		# 	with open("reference.npy", 'wb') as f:
 		# 		np.save(f, save_reference)
 
+<<<<<<< HEAD
 		print("phase ", ind[0,0], current_phase[0:6])
 		save_phase[save_time, :] = current_phase[0:6]
+=======
+		save_phase[save_time, :] = current_phase[0:6]
+		phase_speed = current_phase[-3:] / 60 * 2 * np.pi
+		print("phase speed", phase_speed)
+>>>>>>> 0da051044f942005b2448389cbfb3235d52a32f4
 		save_time += 1
 		if save_time == 200:
 			import matplotlib.pyplot as plt
 			fig = plt.figure()
+<<<<<<< HEAD
 			for j in range(3):
 				ax = fig.add_subplot(3,1,j+1)
 				phase_amp = np.sqrt(save_phase[:, j * 2]**2 + save_phase[:, j*2+1]**2)
 				phase_offset = np.arctan2(save_phase[:, j*2]/phase_amp[:], save_phase[:, j*2+1]/phase_amp[:])
 				ax.plot(phase_amp)
+=======
+			ax = fig.add_subplot(111)
+			phase_amp = np.sqrt(save_phase[:, 0]**2+save_phase[:, 1]**2)
+			phase_offset = np.arctan2(save_phase[:, 0] / phase_amp, save_phase[:, 1] / phase_amp)
+			ax.plot(phase_offset)
+>>>>>>> 0da051044f942005b2448389cbfb3235d52a32f4
 			plt.show()
 			save_time = 0
 
 		world.integrate()
 		import time; time.sleep(0.016)
 
-motion = bvh.load("../../../../../Downloads/MotionCapture/Mocap/Loco/RunRandom.bvh")
+motion = bvh.load("Loco/RunRandom.bvh")
 matrix = motion.to_matrix(local=False)[:, :, :, :]
 while True:
 	for j in range(num_frames):
