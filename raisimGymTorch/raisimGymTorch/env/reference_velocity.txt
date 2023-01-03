@@ -1,0 +1,31 @@
+		index_to_body_id = [19, 20, 21, 15, 16, 17, 1, 2, 3, 4, 5, 11, 12, 13, 7, 8, 9]
+
+		# for i in range(17):
+		# 	current_reference = Rotation.from_quat(coordinate_transform(Rotation.from_matrix(self.local_matrix[index, t, index_to_body_id[i], 0:3, 0:3]).as_quat()[:, [3,0,1,2]])[:,[1,2,3,0]]).as_matrix()
+		# 	next_reference = Rotation.from_quat(coordinate_transform(Rotation.from_matrix(self.local_matrix[index, t+1, index_to_body_id[i], 0:3, 0:3]).as_quat()[:, [3,0,1,2]])[:,[1,2,3,0]]).as_matrix()
+		# 	matrix_difference = np.matmul(next_reference, np.transpose(current_reference, (0, 2, 1)))
+		# 	quat_difference = Rotation.from_matrix(matrix_difference).as_quat()[:,[3,0,1,2]]
+		# 	axis = quat_difference[:,[1,2,3]] / ((quat_difference[:, 1:2]**2 + quat_difference[:, 2:3]**2 + quat_difference[:, 3:4]**2)**0.5)
+		# 	angle = np.arccos(quat_difference[:, 0:1]) * 2
+		# 	self.reference_velocity[env_id, 6 + i * 3: 9 + i * 3] = axis * angle * 60
+
+		# self.current_root_pos += np.matmul(self.current_root_orientation, self.root_linear_vel[self.current_index, 0, :, None]).squeeze()
+		# self.current_root_orientation[:, :, :] = np.matmul(self.root_angular_vel[self.current_index, 0, :, :], self.current_root_orientation)
+		# self.reference[:, 0:3] = np.matmul(self.base_rot, (self.current_root_pos + self.store_data[self.current_index, 0, :])[:, :, None]).squeeze() / 100
+		# self.reference[:, 3:7] = Rotation.from_matrix(np.matmul(self.base_rot, np.matmul(self.current_root_orientation, self.bone_orientation[self.current_index, 0, :]))).as_quat()[:,[3,0,1,2]]
+		# self.reference[env_id, 0:3] = np.matmul(self.base_rot[env_id], (self.current_root_pos[env_id] + self.store_data[self.current_index[env_id], 0, :])[:, :, None]).squeeze() / 100
+		# self.reference[env_id, 3:7] = Rotation.from_matrix(np.matmul(self.base_rot[env_id], np.matmul(self.current_root_orientation[env_id], self.bone_orientation[self.current_index[env_id], 0, :]))).as_quat()[:,[3,0,1,2]]
+		# self.reference[self.reference[:, 3] < 0, 3:7] *= -1
+
+		# next_root_pos = self.current_root_pos + np.matmul(self.current_root_orientation, self.root_linear_vel[self.current_index, 1, :, None]).squeeze()
+		# next_root_orientation = np.matmul(self.root_angular_vel[self.current_index, 1, :, :], self.current_root_orientation)
+		# reference_root_pos = np.matmul(self.base_rot, (next_root_pos + self.store_data[self.current_index, 1, :])[:, :, None]).squeeze() / 100
+		# next_reference_root_orientation = np.matmul(self.base_rot, np.matmul(next_root_orientation, self.bone_orientation[self.current_index, 1, :]))
+		# current_reference_root_orientation = np.matmul(self.base_rot, np.matmul(self.current_root_orientation, self.bone_orientation[self.current_index, 0, :]))
+		# self.reference_velocity[env_id, 0:3] = (reference_root_pos[env_id] - self.reference[env_id, 0:3]) * 60
+		# matrix_difference = np.matmul(current_reference_root_orientation[env_id, ], np.transpose(next_reference_root_orientation[env_id], (0, 2, 1)))
+		# quat_difference = Rotation.from_matrix(matrix_difference).as_quat()[:,[3,0,1,2]]
+		# axis = quat_difference[:,[1,2,3]] / ((quat_difference[:, 1:2]**2 + quat_difference[:, 2:3]**2 + quat_difference[:, 3:4]**2)**0.5)
+		# angle = np.arccos(quat_difference[:, 0:1]) * 2
+		# self.reference_velocity[env_id, 3:6] = axis * angle * 60
+		# import ipdb; ipdb.set_trace()

@@ -7,6 +7,7 @@
 
 namespace raisim {
 
+typedef Eigen::Matrix<double, 8, 1> Vector8d;
 class ENVIRONMENT : public RaisimGymEnv {
 
  public:
@@ -18,193 +19,385 @@ class ENVIRONMENT : public RaisimGymEnv {
     world_ = std::make_unique<raisim::World>();
 
     /// add objects
-    solo8_ = world_->addArticulatedSystem(resourceDir_+"/solo8_URDF_v6/solo8.urdf");
+    solo8_ = world_->addArticulatedSystem(resourceDir_+"/solo8_v7/solo8.urdf");
     solo8_->setName("solo8");
-    solo8_->setControlMode(raisim::ControlMode::PD_PLUS_FEEDFORWARD_TORQUE);
-    world_->addGround();
+    solo8_->setControlMode(raisim::ControlMode::FORCE_AND_TORQUE);
+    // solo8_->setControlMode(raisim::ControlMode::PD_PLUS_FEEDFORWARD_TORQUE);
+    world_->addGround(0.0, "ground_material");
 
     /// get robot data
     gcDim_ = solo8_->getGeneralizedCoordinateDim();
     gvDim_ = solo8_->getDOF();
     nJoints_ = gvDim_ - 6;
+    // in lieu of assert() which doesn't seem to work
+    if (nJoints_ != 8) {
+      throw std::invalid_argument("number of joints should equal 8");
+    }
 
     /// initialize containers
     gc_.setZero(gcDim_); gc_init_.setZero(gcDim_);
     gv_.setZero(gvDim_); gv_init_.setZero(gvDim_);
-    pTarget_.setZero(gcDim_); vTarget_.setZero(gvDim_); pTarget12_.setZero(nJoints_);
-    reference_.setZero(gcDim_);
+    pTarget_.setZero(gcDim_); vTarget_.setZero(gvDim_); pTarget12_.setZero(nJoints_); torqueFeedforward_.setZero(gvDim_);
+    torqueCommand_.setZero(gvDim_);
+    action_prev_.setZero(nJoints_);
+    max_torque_ = 0.0;
+    ref_t_ = 0.0;
+    ref_body_pos_.setZero(); ref_body_quat_.setZero(); ref_body_lin_vel_.setZero(); ref_body_ang_vel_.setZero();
+    ref_joint_pos_.setZero(); ref_joint_vel_.setZero(); ref_joint_torque_.setZero();
+    ref_contact_state_.setZero();
+
+    /// load reference trajectory
+    std::string ref_filename = "traj/" + cfg["ref_filename"].As<std::string>() + ".csv";
+    // check if reference trajectory csv file exists
+    // https://www.tutorialspoint.com/the-best-way-to-check-if-a-file-exists-using-standard-c-cplusplus
+    std::ifstream ifile;
+    ifile.open(ref_filename);
+    if (ifile) {
+      ref_traj_ = openData(ref_filename);
+    } else {
+      ref_traj_.setZero();
+      throw std::invalid_argument("reference csv file doesn't exist");
+    }
+
+    // preprocess reference trajectory to produce desired contact state
+    ref_contact_state_traj_.setZero(ref_traj_.rows(), 4);
+    Vector8d curr_ref_joint_torque;
+    std::vector<int> fl_edge_indices;
+    std::vector<int> fr_edge_indices;
+    std::vector<int> hl_edge_indices;
+    std::vector<int> hr_edge_indices;
+
+    // iterate through joint torque reference, setting desired contact state to
+    // 1 if contact and 0 otherwise. Also record transition edges
+    for (int time_idx = 0; time_idx < ref_traj_.rows(); time_idx++) {
+      curr_ref_joint_torque
+          << ref_traj_.row(time_idx).transpose().segment(30, 8);
+
+      for (int leg_idx = 0; leg_idx < 4; leg_idx++) {
+        // contact assumed to be desired if joint torques are nonzero
+        ref_contact_state_traj_(time_idx, leg_idx) =
+            curr_ref_joint_torque.segment(2 * leg_idx, 2).squaredNorm() > 10e-6;
+
+        // record time indices of contact transitions
+        if (time_idx != 0 &&
+            ref_contact_state_traj_(time_idx, leg_idx) !=
+                ref_contact_state_traj_(time_idx - 1, leg_idx)) {
+          if (leg_idx == 0) {
+            fl_edge_indices.push_back(time_idx);
+          } else if (leg_idx == 1) {
+            fr_edge_indices.push_back(time_idx);
+          } else if (leg_idx == 2) {
+            hl_edge_indices.push_back(time_idx);
+          } else if (leg_idx == 3) {
+            hr_edge_indices.push_back(time_idx);
+          }
+        }
+      }
+    }
+
+    // for each leg, iterate over each transition and set tolerance region
+    // contact state to 2, indicating that either contact state is acceptable
+    int edge_tol = 3;  // defines half width of tolerance region
+    for (int vec_idx = 0; vec_idx < fl_edge_indices.size(); vec_idx++) {
+      for (int tol_reg_idx = std::max(0, fl_edge_indices[vec_idx] - edge_tol);
+           tol_reg_idx <= std::min(int(ref_contact_state_traj_.rows()) - 1,
+                                   fl_edge_indices[vec_idx] + edge_tol);
+           tol_reg_idx++) {
+        ref_contact_state_traj_(tol_reg_idx, 0) = 2;
+      }
+    }
+    for (int vec_idx = 0; vec_idx < fr_edge_indices.size(); vec_idx++) {
+      for (int tol_reg_idx = std::max(0, fr_edge_indices[vec_idx] - edge_tol);
+           tol_reg_idx <= std::min(int(ref_contact_state_traj_.rows()) - 1,
+                                   fr_edge_indices[vec_idx] + edge_tol);
+           tol_reg_idx++) {
+        ref_contact_state_traj_(tol_reg_idx, 1) = 2;
+      }
+    }
+    for (int vec_idx = 0; vec_idx < hl_edge_indices.size(); vec_idx++) {
+      for (int tol_reg_idx = std::max(0, hl_edge_indices[vec_idx] - edge_tol);
+           tol_reg_idx <= std::min(int(ref_contact_state_traj_.rows()) - 1,
+                                   hl_edge_indices[vec_idx] + edge_tol);
+           tol_reg_idx++) {
+        ref_contact_state_traj_(tol_reg_idx, 2) = 2;
+      }
+    }
+    for (int vec_idx = 0; vec_idx < hr_edge_indices.size(); vec_idx++) {
+      for (int tol_reg_idx = std::max(0, hr_edge_indices[vec_idx] - edge_tol);
+           tol_reg_idx <= std::min(int(ref_contact_state_traj_.rows()) - 1,
+                                   hr_edge_indices[vec_idx] + edge_tol);
+           tol_reg_idx++) {
+        ref_contact_state_traj_(tol_reg_idx, 3) = 2;
+      }
+    }
+
+    // // uncomment to write contact state trajectory to csv for debugging
+    // Eigen::MatrixXd ref_contact_state_traj_double = ref_contact_state_traj_.cast<double>();
+    // saveData("ref_contact_state_traj.csv", ref_contact_state_traj_double);
 
     /// this is nominal configuration of anymal
+    // note: although this gets overridden by reset(), this seems to be necessary for correct rendering
     gc_init_ << 0, 0, 0.35, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, -0.0, 0.0, -0.0, 0.0, -0.0;
-    reference_ << 0, 0, 0.35, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, -0.0, 0.0, -0.0, 0.0, -0.0;
 
-    /// set pd gains
-    Eigen::VectorXd jointPgain(gvDim_), jointDgain(gvDim_);
-    jointPgain.setZero(); jointPgain.tail(nJoints_).setConstant(3.0);
-    jointDgain.setZero(); jointDgain.tail(nJoints_).setConstant(0.2);
-    solo8_->setPdGains(jointPgain, jointDgain);
+    // /// set pd gains for implicit PD control
+    // Eigen::VectorXd jointPgain(gvDim_), jointDgain(gvDim_);
+    // jointPgain.setZero(); jointPgain.tail(nJoints_).setConstant(3.0);
+    // jointDgain.setZero(); jointDgain.tail(nJoints_).setConstant(0.5);
+    // solo8_->setPdGains(jointPgain, jointDgain);
+
+    /// set initial force to zero
     solo8_->setGeneralizedForce(Eigen::VectorXd::Zero(gvDim_));
 
+    // set actuation limits
+    double jointLimit = 2.7;
+    Eigen::VectorXd jointUpperLimit(gvDim_), jointLowerLimit(gvDim_);
+    jointUpperLimit.setZero(); jointUpperLimit.tail(nJoints_).setConstant(jointLimit);
+    jointLowerLimit.setZero(); jointLowerLimit.tail(nJoints_).setConstant(-jointLimit);
+    solo8_->setActuationLimits(jointUpperLimit, jointLowerLimit);
+
     /// MUST BE DONE FOR ALL ENVIRONMENTS
-    obDim_ = 31;
-    actionDim_ = nJoints_; actionMean_.setZero(actionDim_); actionStd_.setZero(actionDim_);
+    horizon_ = 3;
+    sensorDim_ = 20;
+    actionDim_ = nJoints_; actionStd_.setZero(actionDim_);
+    // obDim_ = (horizon_ + 1) * sensorDim_ + horizon_ * actionDim_ + 2;
+    obDim_ = sensorDim_ + 2;
     obDouble_.setZero(obDim_);
+    sensor_reading_.setZero(sensorDim_);
+    sensor_history_.setZero(horizon_ * sensorDim_);
+    action_history_.setZero(horizon_ * actionDim_);
 
     /// action scaling
-    actionMean_ = gc_init_.tail(nJoints_);
-    actionStd_.setConstant(1);
+    actionStd_.setConstant(1.0); //TODO: make this a config paramter?
 
     /// Reward coefficients
     rewards_.initializeFromConfigurationFile (cfg["reward"]);
 
-    /// indices of links that should not make contact with ground
-    footIndices_.insert(solo8_->getBodyIdx("base_link"));
-    // footIndices_.insert(solo8_->getBodyIdx("FR_FOOT"));
-    // footIndices_.insert(solo8_->getBodyIdx("HL_FOOT"));
-    // footIndices_.insert(solo8_->getBodyIdx("HR_FOOT"));
+    /// Reward standard deviations
+    position_std_ = cfg["reward"]["position"]["std"].As<double>();
+    orientation_std_ = cfg["reward"]["orientation"]["std"].As<double>();
+    joint_std_ = cfg["reward"]["joint"]["std"].As<double>();
+    action_diff_std_ = cfg["reward"]["action_diff"]["std"].As<double>();
+    max_torque_std_ = cfg["reward"]["max_torque"]["std"].As<double>();
 
+    // toggle termination
+    disable_termination_ = cfg["disable_termination"].As<bool>();
+
+    /// indices of links that are allowed to make contact with ground
+    footIndices_.insert(solo8_->getBodyIdx("FL_LOWER_LEG"));
+    footIndices_.insert(solo8_->getBodyIdx("FR_LOWER_LEG"));
+    footIndices_.insert(solo8_->getBodyIdx("HL_LOWER_LEG"));
+    footIndices_.insert(solo8_->getBodyIdx("HR_LOWER_LEG"));
+
+    // server port
+    int port = cfg["port"].As<int>();
 
     /// visualize if it is the first environment
     if (visualizable_) {
       server_ = std::make_unique<raisim::RaisimServer>(world_.get());
-      server_->launchServer();
+      server_->launchServer(port);
       server_->focusOn(solo8_);
     }
+
+    max_sim_step_ = ref_traj_.rows() - 1;
+    max_phase_ = max_sim_step_; // hard coded for now
+    terminalRewardCoeff_ = 0.0;
+
+    // initialize random number generators
+    double frictionMean = cfg["randomization"]["friction"]["mean"].As<double>();
+    double frictionStd = cfg["randomization"]["friction"]["std"].As<double>();
+    double restitutionMean = cfg["randomization"]["restitution"]["mean"].As<double>();
+    double restitutionStd = cfg["randomization"]["restitution"]["std"].As<double>();
+    massMean_ = cfg["randomization"]["mass"]["mean"].As<double>();
+    massStd_ = cfg["randomization"]["mass"]["std"].As<double>();
+    double torqueScaleMean = cfg["randomization"]["torque_scale"]["mean"].As<double>();
+    double torqueScaleStd = cfg["randomization"]["torque_scale"]["std"].As<double>();
+    double jointOffsetMean = cfg["randomization"]["joint_offset"]["mean"].As<double>();
+    double jointOffsetStd = cfg["randomization"]["joint_offset"]["std"].As<double>();
+
+    gen_ = std::mt19937(std::random_device{}());
+    phaseDistribution_ = std::uniform_int_distribution<int>(0, max_phase_);
+    frictionDistribution_ = std::normal_distribution<double>(frictionMean,
+                                                             frictionStd);
+    restitutionDistribution_ = std::normal_distribution<double>(restitutionMean,
+                                                                restitutionStd);
+    massDistribution_ = std::normal_distribution<double>(massMean_, massStd_);
+    torqueScaleDistribution_ =
+        std::normal_distribution<double>(torqueScaleMean, torqueScaleStd);
+    jointOffsetDistribution_ =
+        std::normal_distribution<double>(jointOffsetMean, jointOffsetStd);
+    // imuDriftDistribution_ = std::uniform_real_distribution<double>(-M_PI, M_PI);
   }
 
   void init() final { }
 
   void reset() final {
-    flip_obs_ = false;
-    speed = 0.0;//(double(rand() % 8) - 2.0) / 10.0;
-    mode_ = 0;//rand() % 2;
-    if (mode_ == 0) {
-      phase_ = (rand() % 2) * (max_phase_/2);
-      max_phase_ = 60;
-      sim_step_ = 0;
-      total_reward_ = 0;
-      gv_init_[0] = speed;
-      // if (phase_ != 0)
-      //   gv_init_[4] = -5;
-      setFlipMotionModular("DDD");
+    // random state initialization
+    phase_ = phaseDistribution_(gen_);
+    sim_step_ = phase_;
+    total_reward_ = 0;
+    
+    setReferenceMotionTraj();
+    gc_init_ << ref_body_pos_, ref_body_quat_, ref_joint_pos_;
+    gv_init_ << ref_body_lin_vel_, ref_body_ang_vel_, ref_joint_vel_;
+
+    // clear history
+    action_prev_.setZero(nJoints_);
+    sensor_history_.setZero(horizon_ * sensorDim_);
+    action_history_.setZero(horizon_ * actionDim_);
+
+    // randomized ground parameters
+    double frictionCoeff = frictionDistribution_(gen_);
+    frictionCoeff = std::max(
+        0.1, std::min(frictionCoeff, 1.0));  // clip to be within [0.1, 1.0]
+    double restitutionCoeff = restitutionDistribution_(gen_);
+    restitutionCoeff = std::max(
+        0.0, std::min(restitutionCoeff, 1.0));  // clip to be within [0.0, 1.0]
+    double restitutionThresh = 0.0;
+    solo8_->getCollisionBody("FL_FOOT/0").setMaterial("foot_material");
+    solo8_->getCollisionBody("FR_FOOT/0").setMaterial("foot_material");
+    solo8_->getCollisionBody("HL_FOOT/0").setMaterial("foot_material");
+    solo8_->getCollisionBody("HR_FOOT/0").setMaterial("foot_material");
+    world_->setMaterialPairProp("ground_material", "foot_material",
+                                frictionCoeff, restitutionCoeff,
+                                restitutionThresh);
+
+    // randomized inertial parameters
+    std::vector<double> &mass = solo8_->getMass();
+    for (int idx = 0; idx < mass.size(); idx++) {
+      double massScale = massDistribution_(gen_);
+      massScale = std::max(massMean_ - 2.5 * massStd_,
+        std::min(massScale, massMean_ + 2.5 * massStd_));
+      mass[idx] *= massScale;
     }
-    else {
-      max_phase_ = 30;
-      phase_ = rand() % max_phase_;
-      sim_step_ = 0;
-      total_reward_ = 0;
-      gv_init_[0] = speed;
-      gv_init_[4] = 0;
-      setReferenceMotionBipedalMode();
+    solo8_->updateMassInfo();
+
+    // randomized joint parameters
+    torque_scale_ = torqueScaleDistribution_(gen_);
+    for (int joint_idx = 0; joint_idx < 8; joint_idx++) {
+      joint_offset_[joint_idx] = jointOffsetDistribution_(gen_);
     }
-    solo8_->setState(reference_, gv_init_);
+
+    // randomized imu drift angle
+    // imu_drift_angle_ = imuDriftDistribution_(gen_);
+    // imu_drift_angle_ = 0.0;
+
+    // set inital conditions
+    solo8_->setState(gc_init_, gv_init_);
     updateObservation();
   }
 
   float step(const Eigen::Ref<EigenVec>& action) final {
-    if (sim_step_ < 60)
-      setFlipMotionModular("DDD");
-    else
-      setFlipMotionModular("DDD");
-    // if (mode_ == 0)
-    //   setFlipMotion();
-    // else
-    //   setReferenceMotionBipedalMode();
-    /// action scaling
-    pTarget12_ = action.cast<double>() * 1;
-    if (flip_obs_) {
-      pTarget12_.segment(0, 4) = action.cast<double>().segment(4, 4);
-      pTarget12_.segment(4, 4) = action.cast<double>().segment(0, 4);
-    }
-    // pTarget12_[2] = pTarget12_[0] * 1.0;
-    // pTarget12_[3] = pTarget12_[1] * 1.0;
-    // pTarget12_[6] = pTarget12_[4] * 1.0;
-    // pTarget12_[7] = pTarget12_[5] * 1.0;
+    // set reference motion
+    setReferenceMotionTraj();
 
+    pTarget12_ = action.cast<double>();
     pTarget12_ = pTarget12_.cwiseProduct(actionStd_);
-    pTarget12_ += actionMean_;
-    pTarget12_ += reference_.tail(nJoints_);
+    pTarget12_ += ref_joint_pos_; // residual policy
+    pTarget12_ += joint_offset_; // randomized joint offset
     pTarget_.tail(nJoints_) = pTarget12_;
 
-    // solo8_->setState(reference_, gv_init_);
+    // vTarget_.tail(nJoints_) = ref_joint_vel_;
+    // torqueFeedforward_.tail(nJoints_) = ref_joint_torque_;
 
-    solo8_->setPdTarget(pTarget_, vTarget_);
+    // // clip feedforward terms from reference motion
+    // double vel_clip = 3.0;
+    // double torque_clip = 1.0;
+    // vTarget_ << vTarget_.cwiseMin(vel_clip).cwiseMax(-vel_clip);
+    // torqueFeedforward_ << torqueFeedforward_.cwiseMin(torque_clip).cwiseMax(-torque_clip);
+
+    max_torque_ = 0.0;
 
     for(int i=0; i< int(control_dt_ / simulation_dt_ + 1e-10); i++){
       if(server_) server_->lockVisualizationServerMutex();
+      solo8_->getState(gc_, gv_);
+
+      // explicit PD control
+      torqueCommand_.tail(nJoints_) = 3.0 * (pTarget_ - gc_).tail(nJoints_) +
+                                      0.3 * (vTarget_ - gv_).tail(nJoints_) +
+                                      torqueFeedforward_.tail(nJoints_);
+      
+      torqueCommand_.tail(nJoints_) *= torque_scale_;
+
+      solo8_->setGeneralizedForce(torqueCommand_);
+      // solo8_->setPdTarget(pTarget_, vTarget_);
+      // solo8_->setGeneralizedForce(torqueFeedforward_);
+
+      max_torque_ = std::max(
+          max_torque_, torqueCommand_.tail(nJoints_).cwiseAbs().maxCoeff());
+
+      // // uncomment to log variables similarly to physical robot
+      // Eigen::VectorXd log_vec(53);  // vector to print when logging to csv
+      // log_vec(0) = world_->getWorldTime(); // total integrated time from init() (not from reset())
+      // log_vec.segment(1, 4) = gc_.segment(3, 4); // simulated IMU reading
+      // log_vec.segment(5, 8) = gc_.tail(nJoints_); // simulated joint positions
+      // log_vec.segment(13, 8) = gv_.tail(nJoints_); // simulated joint velocities (not filtered like for robot)
+      // log_vec.segment(21, 8) = solo8_->getGeneralizedForce().e().tail(nJoints_); // simulated joint torques
+      // log_vec.segment(29, 8) = pTarget_.tail(nJoints_);
+      // log_vec.segment(37, 8) = vTarget_.tail(nJoints_);
+      // log_vec.segment(45, 8) = torqueFeedforward_.tail(nJoints_);
+      // print_vector_csv(log_vec);
+
       world_->integrate();
       if(server_) server_->unlockVisualizationServerMutex();
     }
 
-    phase_ += 1;
-    sim_step_ += 1;
-    if (phase_ > max_phase_ / 2){
-      phase_ = max_phase_ / 2;
-      mode_ = 0;
-      max_phase_ = 60;
-    }
-    // if (phase_ > max_phase_ / 2 && mode_ == 0 && !flip_obs_){
-    //   phase_ = max_phase_ / 2;
-    //   mode_ = 0;
-    //   max_phase_ = 60;
-    // }
-    // else if (phase_ > max_phase_ / 2) {
-    //   phase_ = max_phase_ / 2;
-    // }
-    if (sim_step_ == 60) {
-      flip_obs_ = true;
-      phase_ = 0;
-      //setFlipMotion_v2();
-      // solo8_->setState(reference_, gv_init_);
-    }
-    else if (sim_step_ == 120) {
-      flip_obs_ = false;
-      phase_ = 0;
-      sim_step_ = 0;
-    }
-    
-    // if (phase_ > max_phase_ / 4 && mode_ == 0){
-    //   phase_ = 0;
-    //   mode_ = 1;
-    //   max_phase_ = 30;
-    // }
-    // if (phase_ > max_phase_) {
-    //   phase_ = 0;
-    // }
+    // // uncomment to visualize reference motion
+    // Eigen::VectorXd reference;
+    // reference.setZero(gcDim_);
+    // reference << ref_body_pos_, ref_body_quat_, ref_joint_pos_;
+    // solo8_->setState(reference, gv_init_);
 
     updateObservation();
-
-    // rewards_.record("torque", solo8_->getGeneralizedForce().squaredNorm());
-    // rewards_.record("forwardVel", std::exp(10.0*-std::pow(bodyLinearVel_[0]-0.5, 2.0)));
+    computeTrackingError(action.cast<double>());
     computeReward();
-    total_reward_ += rewards_.sum();
 
+    sensor_history_.tail((horizon_ - 1) * sensorDim_)
+        << sensor_history_.head((horizon_ - 1) * sensorDim_).eval();
+    sensor_history_.head(sensorDim_) << sensor_reading_;
+
+    action_history_.tail((horizon_ - 1) * actionDim_)
+        << action_history_.head((horizon_ - 1) * actionDim_).eval();
+    action_history_.head(actionDim_) << action.cast<double>();
+
+    phase_ += 1;
+    if (phase_ >= max_phase_){
+      phase_ = 0;
+    }
+
+    sim_step_ += 1;
+
+    action_prev_ = action.cast<double>();
+    // action_prev_ = action.cast<double>() + ref_joint_pos_;
+
+    total_reward_ += rewards_.sum();
+    
     return rewards_.sum();
   }
 
   void computeReward() {
-    float joint_reward = 0, position_reward = 0, orientation_reward = 0;
-    for (int j = 0; j < 4; j++) {
-      joint_reward += std::pow(gc_[7+j*2]-reference_[7+j*2], 2) + std::pow(gc_[8+j*2]-reference_[8+j*2], 2);
-    }
-    position_reward += 1.0 * std::pow(gv_[0]-speed, 2) + std::pow(gc_[1]-reference_[1], 2) + std::pow(gc_[2]-reference_[2], 2);
-    orientation_reward += 2 * (std::pow(gc_[4]-reference_[4], 2) + std::pow(gc_[5]-reference_[5], 2) + std::pow(gc_[6]-reference_[6], 2));
-    // orientation_reward += 5 * (std::pow(gv_[3], 2) + std::pow(gv_[4], 2) + std::pow(gv_[5], 2));
-    // position_reward = 5 * std::pow(gc_[2]-0.53, 2);
-    // orientation_reward = 2 * (std::pow(gc_[4]-0.0, 2) + std::pow(gc_[5]+0.7071068, 2) + std::pow(gc_[6]-0.0, 2)); 
+    rewards_.record("position", std::exp(-position_error_sq_ / (2.0 * position_std_ * position_std_)));
+    rewards_.record("orientation", std::exp(-orientation_error_sq_ / (2.0 * orientation_std_ * orientation_std_)));
+    rewards_.record("joint", std::exp(-joint_error_sq_ / (2.0 * joint_std_ * joint_std_)));
+    rewards_.record("action_diff", std::exp(-action_diff_sq_ / (2.0 * action_diff_std_ * action_diff_std_)));
+    rewards_.record("max_torque", std::exp(-max_torque_ * max_torque_ / (2.0 * max_torque_std_ * max_torque_std_)));
 
-    float contact_reward = 0.0;
-    raisim::Vec<3> vel1, vel2;
-    solo8_->getFrameVelocity(solo8_->getFrameIdxByName("HL_ANKLE"), vel1);
-    solo8_->getFrameVelocity(solo8_->getFrameIdxByName("HR_ANKLE"), vel2);
-    contact_reward += 2 * std::pow(vel1[2], 2); //0.01 for bounding
-    contact_reward += 2 * std::pow(vel2[2], 2);
+    // // uncomment to print reward components. Save to csv file via
+    // // python test_policy.py exp-name/iterX.pt >> exp-name-reward-log.csv
+    // std::cout
+    //     << std::exp(-position_error_sq_ / (2.0 * position_std_ * position_std_)) << ", "
+    //     << std::exp(-orientation_error_sq_ / (2.0 * orientation_std_ * orientation_std_)) << ", "
+    //     << std::exp(-joint_error_sq_ / (2.0 * joint_std_ * joint_std_)) << ", "
+    //     << std::exp(-action_diff_sq_ / (2.0 * action_diff_std_ * action_diff_std_)) << ", "
+    //     << std::exp(-max_torque_ * max_torque_ / (2.0 * max_torque_std_ * max_torque_std_)) << std::endl;
 
-    rewards_.record("position", std::exp(-position_reward));
-    rewards_.record("orientation", std::exp(-orientation_reward));
-    rewards_.record("joint", std::exp(-3*joint_reward));
-    rewards_.record("torque", solo8_->getGeneralizedForce().squaredNorm());
-    rewards_.record("contact", std::exp(-contact_reward));
+    // // uncomment to print error components. Save to csv file via
+    // // python test_policy.py exp-name/iterX.pt >> exp-name-error-log.csv
+    // std::cout
+    //     << std::sqrt(position_error_sq_) / position_std_ << ", "
+    //     << std::sqrt(orientation_error_sq_) / orientation_std_ << ", "
+    //     << std::sqrt(joint_error_sq_) / joint_std_ << ", "
+    //     << std::sqrt(action_diff_sq_) / action_diff_std_ << ", "
+    //     << max_torque_ / max_torque_std_ << std::endl;
   }
 
   void updateObservation() {
@@ -215,47 +408,54 @@ class ENVIRONMENT : public RaisimGymEnv {
     raisim::quatToRotMat(quat, rot);
     bodyLinearVel_ = rot.e().transpose() * gv_.segment(0, 3);
     bodyAngularVel_ = rot.e().transpose() * gv_.segment(3, 3);
+    raisim::Vec<4> imu_reading;
+    imu_reading[0] = gc_[3]; imu_reading[1] = gc_[4]; imu_reading[2] = gc_[5]; imu_reading[3] = gc_[6];
 
-    obDouble_ << gc_[2], /// body height
-        gc_[3], gc_[4], gc_[5], gc_[6], /// body orientation
-        gc_.tail(8), /// joint angles
-        bodyLinearVel_, bodyAngularVel_, /// body linear&angular velocity
+    // // simulate drift in the imu heading reading
+    // // note: apply to yaw for quadruped motions, apply to roll for biped motions (hack)
+    // raisim::Vec<3> imu_drift_euler;
+    // raisim::Vec<4> imu_drift;
+    // imu_drift_euler[0] = 0.0; imu_drift_euler[1] = 0.0; imu_drift_euler[2] = imu_drift_angle_;
+    // // imu_drift_euler[0] = imu_drift_angle_; imu_drift_euler[1] = 0.0; imu_drift_euler[2] = 0.0;
+    // raisim::eulerVecToQuat(imu_drift_euler, imu_drift);
+    // raisim::quatMul(quat, imu_drift, imu_reading);
+
+    // // for debugging
+    // raisim::quatToRotMat(imu_reading, rot);
+    // std::cout << rot.e() << std::endl << std::endl;
+    // std::cout << imu_reading.e().transpose() << std::endl;
+
+    sensor_reading_ <<
+        // gc_[2], /// body height
+        imu_reading.e(),
+        gc_.tail(8) + joint_offset_, /// joint angles, with randomized joint offset
+        // bodyLinearVel_, bodyAngularVel_, /// body linear&angular velocity
         gv_.tail(8), /// joint velocity
-        std::cos(phase_ * 3.1415 * 2 / max_phase_), std::sin(phase_ * 3.1415 * 2 / max_phase_), // phase
-        speed, //speed
-        mode_;
-    // std::cout << flip_obs_ << std::endl;
-    if (flip_obs_) {
-      Eigen::VectorXd old_obs;
-      old_obs = obDouble_.replicate(1, 1);
 
-      double euler[3];
-      double quat_2[4];
-      quat_2[0] = gc_[3], quat_2[1] = gc_[4], quat_2[2] = gc_[5], quat_2[3] = gc_[6];
-      raisim::quatToEulerVec(quat_2, euler);
-      euler[1] += 3.1415;
-      raisim::Vec<3> euler_2;
-      euler_2[0] = euler[0]; euler_2[1] = euler[1]; euler_2[2] = euler[2];
-      raisim::eulerVecToQuat(euler_2, quat);
-      obDouble_[1] = quat[0], obDouble_[2] = quat[1], obDouble_[3] = quat[2], obDouble_[4] = quat[3];
-      if (quat[0] < 0)
-        obDouble_.segment(1, 4) *= -1;
-      
-      //relabel joint
-      obDouble_.segment(5, 4) << old_obs.segment(9, 4);
-      obDouble_.segment(9, 4) << old_obs.segment(5, 4);
-      obDouble_.segment(19, 4) << old_obs.segment(23, 4);
-      obDouble_.segment(23, 4) << old_obs.segment(19, 4);
+    obDouble_ << 
+        sensor_reading_,
+        // sensor_history_,
+        // action_history_,
+        std::cos(2.0*M_PI * phase_/max_phase_), std::sin(2.0*M_PI * phase_/max_phase_); // phase
 
-
-      // subtract 180 from front hip
-      obDouble_(5) -= M_PI;
-      obDouble_(7) -= M_PI;
-      // add 180 from hind hip
-      obDouble_(9) += M_PI;
-      obDouble_(11) += M_PI;
-    }
-  }
+    // // uncomment to print observation components
+    // std::cout << obDouble_.segment(0,4).transpose() << std::endl;
+    // std::cout << obDouble_.segment(4,8).transpose() << std::endl;
+    // std::cout << obDouble_.segment(12,8).transpose() << std::endl;
+    // std::cout << obDouble_.segment(20,4).transpose() << std::endl;
+    // std::cout << obDouble_.segment(24,8).transpose() << std::endl;
+    // std::cout << obDouble_.segment(32,8).transpose() << std::endl;
+    // std::cout << obDouble_.segment(40,4).transpose() << std::endl;
+    // std::cout << obDouble_.segment(44,8).transpose() << std::endl;
+    // std::cout << obDouble_.segment(52,8).transpose() << std::endl;
+    // std::cout << obDouble_.segment(60,4).transpose() << std::endl;
+    // std::cout << obDouble_.segment(64,8).transpose() << std::endl;
+    // std::cout << obDouble_.segment(72,8).transpose() << std::endl;
+    // std::cout << obDouble_.segment(80,8).transpose() << std::endl;
+    // std::cout << obDouble_.segment(88,8).transpose() << std::endl;
+    // std::cout << obDouble_.segment(96,8).transpose() << std::endl;
+    // std::cout << obDouble_.segment(104,2).transpose() << std::endl << std::endl;
+  } 
 
   void observe(Eigen::Ref<EigenVec> ob) final {
     /// convert it to float
@@ -271,381 +471,305 @@ class ENVIRONMENT : public RaisimGymEnv {
   }
 
   bool isTerminalState(float& terminalReward) final {
-    terminalReward = float(terminalRewardCoeff_) * 0.0f;
+    terminalReward = float(terminalRewardCoeff_);
 
-    /// if the contact body is not feet
+    if (disable_termination_) {
+      return false;
+    }
+
+    // /// if the contact body is not feet
     // for(auto& contact: solo8_->getContacts())
     //   if(footIndices_.find(contact.getlocalBodyIndex()) == footIndices_.end())
     //     return true;
-    solo8_->getState(gc_, gv_);
-    raisim::Vec<4> quat;
-    raisim::Mat<3,3> rot;
-    quat[0] = gc_[3]; quat[1] = gc_[4]; quat[2] = gc_[5]; quat[3] = gc_[6];
-    raisim::quatToRotMat(quat, rot);
-    // std::cout << gc_[2]-reference_[2]<<std::endl;
-    if (std::abs(gc_[4]) > 0.2 || std::abs(gc_[6]) > 0.2)// || std::abs(gc_[5] + 0.7071068) > 0.3)// || std::abs(gc_[4]) > 0.5 || std::abs(gc_[5]) > 0.5 || std::abs(gc_[6]) > 0.5 || rewards_.sum() < 0.5)
-      return true;
-    if (mode_ == 1 && gc_[2] < 0.3)
-      return true;
-    if (std::abs(gc_[2]) < 0.1)
-      return true;
 
-    // int counter = 0;
-    // int contact_id = 0;
-    // raisim::Vec<3> contact_vel;
-    // for(auto& contact: solo8_->getContacts()) {
-    //   solo8_->getContactPointVel(contact_id, contact_vel);
-    //   if (!flip_obs_) {
-    //     if(solo8_->getBodyIdx("HL_LOWER_LEG") == contact.getlocalBodyIndex() || solo8_->getBodyIdx("HR_LOWER_LEG") == contact.getlocalBodyIndex()) {
-    //       counter += 1;
-    //       if (phase_ > 5 and contact_vel.squaredNorm() > 0.3)
-    //         return true;
-    //     }
-    //   }
-    //   else {
-    //     if(solo8_->getBodyIdx("FL_LOWER_LEG") == contact.getlocalBodyIndex() || solo8_->getBodyIdx("FR_LOWER_LEG") == contact.getlocalBodyIndex()) {
-    //       counter += 1;
-    //       if (phase_ > 5 and contact_vel.squaredNorm() > 0.3)
-    //         return true;
-    //     }
-    //   }
-    //   contact_id++;
-    // }
-    // // std::cout << counter << std::endl;
-    // if (counter < 2)
-    //   return true;
+    // check for non-foot contacts and extract contact state of the four legs
+    std::vector<bool> contact_state(4, false);
+    for (auto& contact : solo8_->getContacts()) {
+      if (contact.skip()) {
+        // if the contact is internal, one contact point is set to 'skip'
+        continue;
+      } else if (footIndices_.find(contact.getlocalBodyIndex()) ==
+                 footIndices_.end()) {
+        // immediately terminate if any non-foot bodies make contact
+        return true;
+      }
+      // otherwise, record contact state of each leg
+      else if (contact.getlocalBodyIndex() ==
+               solo8_->getBodyIdx("FL_LOWER_LEG")) {
+        contact_state[0] = true;
+      } else if (contact.getlocalBodyIndex() ==
+                 solo8_->getBodyIdx("FR_LOWER_LEG")) {
+        contact_state[1] = true;
+      } else if (contact.getlocalBodyIndex() ==
+                 solo8_->getBodyIdx("HL_LOWER_LEG")) {
+        contact_state[2] = true;
+      } else if (contact.getlocalBodyIndex() ==
+                 solo8_->getBodyIdx("HR_LOWER_LEG")) {
+        contact_state[3] = true;
+      }
+    }
+
+    // terminate if actual and desired contact states don't match
+    for (int leg_idx = 0; leg_idx < contact_state.size(); leg_idx++) {
+      // value of 2 in the reference indicates that either contact state is
+      // acceptable
+      if (ref_contact_state_(leg_idx) == 2) {
+        continue;
+      } else if (contact_state[leg_idx] != ref_contact_state_(leg_idx)) {
+        return true;
+      }
+    }
+
+    // computeTrackingError(); // redundant call for good measure
+
+    // if error components ever go beyond 2 standard deviations of the reward gaussian
+    if (std::sqrt(position_error_sq_) > position_std_ * 2.5) {
+      return true;
+    }
+    if (std::sqrt(orientation_error_sq_) > orientation_std_ * 2.5) {
+      return true;
+    }
+    if (std::sqrt(joint_error_sq_) > joint_std_ * 2.5) {
+      return true;
+    }
+    if (std::sqrt(action_diff_sq_) > action_diff_std_ * 2.5) {
+      return true;
+    }
+    if (max_torque_ > max_torque_std_ * 2.5) {
+      return true;
+    }
 
     terminalReward = 0.f;
     return false;
   }
 
-  void setReferenceMotion() {
-    reference_ *= 0;
-    reference_[0] = speed * 0.02 * sim_step_;
+  void setReferenceMotionTraj() {
+    Eigen::Matrix<double, 38, 1> traj_t;
+    traj_t << ref_traj_.row(sim_step_).transpose();
+    ref_t_ = traj_t(0);
+    ref_body_pos_ << traj_t.segment(1, 3);
+    ref_body_quat_ << traj_t.segment(4, 4);
+    ref_body_lin_vel_ << traj_t.segment(8, 3);
+    ref_body_ang_vel_ << traj_t.segment(11, 3);
+    ref_joint_pos_ << traj_t.segment(14, 8);
+    ref_joint_vel_ << traj_t.segment(22, 8);
+    ref_joint_torque_ << traj_t.segment(30, 8);
 
-    raisim::Vec<4> quat;
-    raisim::Vec<3> euler;
-    euler[0] = 0;
-    euler[2] = 0;
-    euler[1] = std::max(-std::sin(2.0*3.1415*std::min(phase_*1.0, 2.0 * max_phase_/4.0)/max_phase_/2.0) * 3.1415, -3.1415 / 2);
-    raisim::eulerVecToQuat(euler, quat);
-    
-    reference_[3] = quat[0];
-    reference_[4] = quat[1];
-    reference_[5] = quat[2];
-    reference_[6] = quat[3];
-    
-    reference_[2] = 0.2 + 0.32 * std::sin(2.0*3.1415*phase_/max_phase_);
+    ref_contact_state_ << ref_contact_state_traj_.row(sim_step_).transpose();
 
-    reference_[7+4] = 0.65 + 0.92 * std::sin(2.0*3.1415*phase_/max_phase_);
-    reference_[7+6] = 0.65 + 0.92 * std::sin(2.0*3.1415*phase_/max_phase_);
-
-    reference_[7] = 0.65; 
-    reference_[8] = -2.0 + 2.0 * std::min(std::sin(2.0*3.1415*std::min(phase_*1.0, 2.0 * max_phase_/4.0)/max_phase_/2.0) * 3.1415, 3.1415 / 2);
-    reference_[9] = 0.65;
-    reference_[10] = -2.0 + 2.0 * std::min(std::sin(2.0*3.1415*std::min(phase_*1.0, 2.0 * max_phase_/4.0)/max_phase_/2.0) * 3.1415, 3.1415 / 2);
-
-    reference_[12] = -2.0 + std::sin(2.0*3.1415*phase_/max_phase_);
-    reference_[14] = -2.0 + std::sin(2.0*3.1415*phase_/max_phase_);
-    //quadrupedal_mode
-    // for (int i = 0; i < 4; i++) {
-    //   if (phase_ <= max_phase_ / 2) {
-    //     if (i == 0 || i == 2) {
-    //       reference_[7+i*2] = 0.65;
-    //       reference_[8+i*2] = -1.0;
-    //     }
-    //     else {
-    //       reference_[7+i*2] = 0.65 - 0.2 * speed * std::sin(2.0*3.1415*phase_/max_phase_);
-    //       reference_[8+i*2] = -1.0 - 0.7 * std::sin(2.0*3.1415*phase_/max_phase_);
-    //     }
-    //   }
-    //   else{
-    //     if (i == 0 or i == 2) {
-    //       reference_[7+i*2] = 0.65 - 0.2 * speed * std::sin(2.0*3.1415*phase_/max_phase_ - 3.1415);
-    //       reference_[8+i*2] = -1.0 - 0.7 * std::sin(2.0*3.1415*phase_/max_phase_ - 3.1415);
-    //     }
-    //     else {
-    //       reference_[7+i*2] = 0.65;
-    //       reference_[8+i*2] = -1.0;
-    //     }
-    //   }
-    // }
+    // in lieu of assert() which doesn't seem to work
+    if (std::abs(ref_t_ - control_dt_ * sim_step_ ) >= control_dt_) {
+      throw std::invalid_argument("control_dt doesn't match csv reference file");
+    }
   }
 
-  void setReferenceMotionBipedalMode() {
-    reference_[0] = speed * 0.02 * sim_step_;
-    reference_[2] = 0.53;
-    reference_[3] = 0.7071068;
-    reference_[5] = -0.7071068;
-    reference_[4] = 0.0;
-    reference_[6] = 0.0;
-    for (int i = 0; i < 4; i++) {
-      if (i == 0 || i == 1) {
-        reference_[7+i*2] = 0.0;
-        reference_[8+i*2] = 0.0;
-      }
-      else {
-        reference_[7+i*2] = 1.57;
-        reference_[8+i*2] = 0.0;
-      }
-    }
-    if (phase_ <= max_phase_ / 2) {
-      reference_[7+4] = 1.57 - 0.7 * std::sin(2.0*3.1415*phase_/max_phase_);
-      reference_[8+4] = 0.7 * std::sin(2.0*3.1415*phase_/max_phase_);
-    }
-    else {
-      reference_[7+6] = 1.57 - 0.7 * std::sin(2.0*3.1415*phase_/max_phase_ - 3.1415);
-      reference_[8+6] = 0.7 * std::sin(2.0*3.1415*phase_/max_phase_ - 3.1415);
-    }
-    reference_[7] = 1.57 + std::sin(2.0*3.1415*phase_/max_phase_);
-    reference_[9] = 1.57 + std::sin(2.0*3.1415*phase_/max_phase_ + 3.1415);
-  }
+  void computeTrackingError(const Eigen::MatrixXd actionDouble) {
+    raisim::Vec<4> quat, quat2, quat_error;
+    raisim::Mat<3,3> rot, rot2, rot_error;
+    quat = gc_.segment(3,4);
+    quat2 = ref_body_quat_;
+    raisim::quatToRotMat(quat, rot);
+    raisim::quatToRotMat(quat2, rot2);
+    raisim::mattransposematmul(rot, rot2, rot_error);
+    raisim::rotMatToQuat(rot_error, quat_error);
 
-  void setFlipMotionModular(const char* sequence) {
+    // // construct array versions of state and reference quaternions
+    // double quat_arr1[4];
+    // double quat_arr2[4];
+    // quat_arr1[0] = gc_(3);
+    // quat_arr1[1] = gc_(4);
+    // quat_arr1[2] = gc_(5);
+    // quat_arr1[3] = gc_(6);
+    // quat_arr2[0] = ref_body_quat_(0);
+    // quat_arr2[1] = ref_body_quat_(1);
+    // quat_arr2[2] = ref_body_quat_(2);
+    // quat_arr2[3] = ref_body_quat_(3);
 
-    Eigen::Vector3d base_pos;
-    Eigen::Vector3d base_pos_init;
-    Eigen::Vector4d base_angle_axis;
-    Eigen::Vector4d base_quat;
+    // // convert quaternions to euler angles
+    // double euler_arr1[3];
+    // double euler_arr2[3];
+    // raisim::quatToEulerVec(quat_arr1, euler_arr1);
+    // raisim::quatToEulerVec(quat_arr2, euler_arr2);
 
-    Eigen::Vector2d joint_front;
-    Eigen::Vector2d joint_front_init;
-    Eigen::Vector2d joint_front_mid;
-    Eigen::Vector2d joint_front_final;
-    Eigen::Vector2d joint_hind;
+    // // store euler angles as vectors
+    // Eigen::Vector3d euler1;
+    // Eigen::Vector3d euler2;
+    // euler1 << euler_arr1[0], euler_arr1[1], euler_arr1[2];
+    // euler2 << euler_arr2[0], euler_arr2[1], euler_arr2[2];
 
-    double half_body_length = 0.178; // from URDF
-    base_pos_init << 0.0, 0.0, 0.25;
-    double hip_init = 0.65;
-    double knee_init = 1.5;
-
-    // goes from 0 to pi over course of flip motion (ie as phase goes from 0 to max_phase_/2)
-    double theta = (double)phase_/max_phase_ * 2*M_PI;
-
-    base_pos <<
-      // base_pos_init(0) + half_body_length*std::cos(theta),
-      base_pos_init(0) + speed * 0.02 * sim_step_,
-      base_pos_init(1),
-      base_pos_init(2) + half_body_length*std::sin(theta);
-
-    base_angle_axis << -theta, 0.0, 1.0, 0.0;
-    
-    // set front leg trajectory points to interpolate from
-    joint_front_init(0) = (sequence[0] == 'A' || sequence[0] == 'C') ? -hip_init : hip_init;
-    joint_front_init(1) = (sequence[0] == 'A' || sequence[0] == 'C') ? knee_init : -knee_init;
-
-    joint_front_mid(0) = (sequence[1] == 'A' || sequence[1] == 'C') ? M_PI/2.0 : -M_PI/2.0;
-    joint_front_mid(1) = 0.0;
-
-    joint_front_final(0) = (sequence[2] == 'A' || sequence[2] == 'C') ? -hip_init + M_PI : hip_init + M_PI;
-    joint_front_final(1) = (sequence[2] == 'A' || sequence[2] == 'C') ? knee_init : -knee_init;
-    joint_front_final(0) += (sequence[1] == 'A' || sequence[1] == 'C') ? 0 : -2.0*M_PI; // account for angle wrap
-
-    // linearly interpolate between joint_front_init, joint_front_mid, and joint_front_final to get current joint_front
-    if (phase_ <= max_phase_/4) {
-      // interp goes from 0.0 to 1.0 as phase goes from 0 to max_phase_/4
-      double interp = (double)phase_ / (max_phase_/4.0);
-      joint_front << joint_front_init*(1.0-interp) + joint_front_mid*(interp);
+    position_error_sq_ = (gc_.segment(0,3) - ref_body_pos_).squaredNorm();
+    orientation_error_sq_ = quat_error.e().tail(3).squaredNorm();
+    // orientation_error_sq_ = (euler1 - euler2).head(2).squaredNorm(); // roll and pitch only (no yaw)
+    joint_error_sq_ = (gc_.tail(8) - ref_joint_pos_).squaredNorm();
+    // action_diff_sq_ = (actionDouble - action_prev_).squaredNorm();
+    if (action_prev_.squaredNorm() == 0.0) {
+      action_diff_sq_ = 0.0;
     } else {
-      // interp goes from 0.0 to 1.0 as phase goes from max_phase_/4 to max_phase_/2
-      double interp = (double)(phase_ - max_phase_/4.0) / (max_phase_/4.0);
-      joint_front << joint_front_mid*(1.0-interp) + joint_front_final*(interp);
+      action_diff_sq_ = (actionDouble - action_prev_).squaredNorm();
     }
-
-    // absolute hind leg angle remains constant--no need to interpolate
-    joint_hind(0) = (sequence[0] == 'A' || sequence[0] == 'B') ? -hip_init + theta : hip_init + theta;
-    joint_hind(1) = (sequence[0] == 'A' || sequence[0] == 'B') ? knee_init : -knee_init;
-
-    if (flip_obs_) {
-      // TODO: may want to constrain angles within some range to account for periodicity
-      // rotate base 180 about y axis
-      base_angle_axis(0) += M_PI;
-
-      // rotate hip joints 180
-      joint_front(0) += M_PI;
-      joint_hind(0) += M_PI;
-      joint_hind(0) -= 2*M_PI;
-
-      // switch front and hind trajectories
-      Eigen::Vector2d old_joint_front;
-      Eigen::Vector2d old_joint_hind;
-      old_joint_front << joint_front;
-      old_joint_hind << joint_hind;
-      joint_front << old_joint_hind;
-      joint_hind << old_joint_front;
-    }
-
-    // calculate quaternion from angle-axis representation
-    // http://www.quaternionmath.com/representations/axis-and-angle
-    base_quat <<
-      std::cos(base_angle_axis[0]/2.0),
-      base_angle_axis(1)*std::sin(base_angle_axis(0)/2.0),
-      base_angle_axis(2)*std::sin(base_angle_axis(0)/2.0),
-      base_angle_axis(3)*std::sin(base_angle_axis(0)/2.0);
-    if (base_quat[0] < 0)
-      base_quat *= -1.0;
-
-    reference_.segment(0,3) << base_pos;
-    reference_.segment(3,4) << base_quat;
-    reference_.segment(7,2) << joint_front;
-    reference_.segment(9,2) << joint_front;
-    reference_.segment(11,2) << joint_hind;
-    reference_.segment(13,2) << joint_hind;
+    // action_diff_sq_ = (actionDouble + ref_joint_pos_ - action_prev_).squaredNorm();
+    // note: max_torque_ not calculated here
   }
 
-  void setFlipMotion_v2() {
-    reference_ *= 0;
-    reference_[0] = speed * 0.02 * sim_step_;
+  /**
+   *  Helper function for saving Eigen matrix to csv
+   *  author: Aleksandar Haber
+   *  https://github.com/AleksandarHaber/Save-and-Load-Eigen-Cpp-Matrices-Arrays-to-and-from-CSV-files
+   */
+  void saveData(std::string fileName, Eigen::MatrixXd matrix) {
+    // https://eigen.tuxfamily.org/dox/structEigen_1_1IOFormat.html
+    const static Eigen::IOFormat CSVFormat(Eigen::FullPrecision,
+                                          Eigen::DontAlignCols, ", ", "\n");
 
-    raisim::Vec<4> quat;
-    raisim::Vec<3> euler;
-    euler[0] = 0;
-    euler[2] = 0;
-    if (phase_ < max_phase_ / 4) {
-      euler[1] = -std::sin(2.0 * 3.1415*phase_/max_phase_) * 1.57;
-      reference_[2] = 0.25 + 0.2 * std::sin(2.0*3.1415*phase_/max_phase_);
-    }
-    else {
-      euler[1] = -1.57 - std::sin(2.0 * 3.1415*(phase_-max_phase_/4)/max_phase_) * 1.57;
-      reference_[2] = 0.45 - 0.2 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-    }
-    euler[1] = -3.14 * phase_ / max_phase_ * 2;
-    raisim::eulerVecToQuat(euler, quat);
-    
-    reference_[3] = quat[0];
-    reference_[4] = quat[1];
-    reference_[5] = quat[2];
-    reference_[6] = quat[3];
-
-    reference_[12] = -1.5;
-    reference_[14] = -1.5;
-
-    if (phase_ < max_phase_ / 4){
-      reference_[7+4] = 0.65 + 0.92 * std::sin(2.0*3.1415*phase_/max_phase_);
-      reference_[7+6] = 0.65 + 0.92 * std::sin(2.0*3.1415*phase_/max_phase_);
-      // reference_[12] = -2.0 + 2.0 * std::sin(2.0*3.1415*phase_/max_phase_);
-      // reference_[14] = -2.0 + 2.0 * std::sin(2.0*3.1415*phase_/max_phase_);
-
-      reference_[7] = 0.65 + 0.92 * std::sin(2.0*3.1415*phase_/max_phase_);
-      reference_[9] = 0.65 + 0.92 * std::sin(2.0*3.1415*phase_/max_phase_);
-      reference_[8] = -1.5 + 1.5 * std::sin(2.0*3.1415*phase_/max_phase_);
-      reference_[10] = -1.5 + 1.5 * std::sin(2.0*3.1415*phase_/max_phase_);
-    }
-    else {
-      reference_[7+4] = 1.57 + 0.92 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-      reference_[7+6] = 1.57 + 0.92 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-      // reference_[12] = 0.0 + 2.0 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-      // reference_[14] = 0.0 + 2.0 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-
-      reference_[7] = 1.57 + 0.92 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-      reference_[9] = 1.57 + 0.92 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-      reference_[8] = 0.0 + 1.5 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-      reference_[10] = 0.0 + 1.5 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-    }
-    reference_[11] = 0.65 + 3.79*phase_/max_phase_*2;
-    reference_[13] = 0.65 + 3.79*phase_/max_phase_*2;
-
-    if (flip_obs_) {
-      double temp1 = reference_[7], temp2 = reference_[9];
-      reference_[7] = 3.1415 + reference_[11];
-      reference_[9] = 3.1415 + reference_[13];
-      reference_[11] = 3.1415 + temp1;
-      reference_[13] = 3.1415 + temp2;
-      temp1 = reference_[8], temp2 = reference_[10];
-      reference_[8] = -reference_[12]; reference_[10] = -reference_[14]; reference_[12] = -temp1; reference_[14] = -temp2;
-      euler[1] += 3.14;
-      raisim::eulerVecToQuat(euler, quat);
-      reference_[3] = quat[0];
-      reference_[4] = quat[1];
-      reference_[5] = quat[2];
-      reference_[6] = quat[3];
+    std::ofstream file(fileName);
+    if (file.is_open()) {
+      file << matrix.format(CSVFormat);
+      file.close();
     }
   }
 
-  void setFlipMotion() {
-    reference_ *= 0;
-    reference_[0] = speed * 0.02 * sim_step_;
 
-    raisim::Vec<4> quat;
-    raisim::Vec<3> euler;
-    euler[0] = 0;
-    euler[2] = 0;
-    if (phase_ < max_phase_ / 4) {
-      euler[1] = -std::sin(2.0 * 3.1415*phase_/max_phase_) * 1.57;
-      reference_[2] = 0.244 + 0.2 * std::sin(2.0*3.1415*phase_/max_phase_);
+  /**
+   *  Helper function for reading Eigen matrix from csv
+   *  author: Aleksandar Haber
+   *  https://github.com/AleksandarHaber/Save-and-Load-Eigen-Cpp-Matrices-Arrays-to-and-from-CSV-files
+   */
+  Eigen::MatrixXd openData(std::string fileToOpen) {
+    // the inspiration for creating this function was drawn from here (I did NOT
+    // copy and paste the code)
+    // https://stackoverflow.com/questions/34247057/how-to-read-csv-file-and-assign-to-eigen-matrix
+
+    // the input is the file: "fileToOpen.csv":
+    // a,b,c
+    // d,e,f
+    // This function converts input file data into the Eigen matrix format
+
+    // the matrix entries are stored in this variable row-wise. For example if we
+    // have the matrix: M=[a b c
+    //	  d e f]
+    // the entries are stored as matrixEntries=[a,b,c,d,e,f], that is the variable
+    // "matrixEntries" is a row vector later on, this vector is mapped into the
+    // Eigen matrix format
+    std::vector<double> matrixEntries;
+
+    // in this object we store the data from the matrix
+    std::ifstream matrixDataFile(fileToOpen);
+
+    // this variable is used to store the row of the matrix that contains commas
+    std::string matrixRowString;
+
+    // this variable is used to store the matrix entry;
+    std::string matrixEntry;
+
+    // this variable is used to track the number of rows
+    int matrixRowNumber = 0;
+
+    while (getline(matrixDataFile,
+                  matrixRowString))  // here we read a row by row of
+                                      // matrixDataFile and store every line into
+                                      // the string variable matrixRowString
+    {
+      std::stringstream matrixRowStringStream(
+          matrixRowString);  // convert matrixRowString that is a string to a
+                            // stream variable.
+
+      while (getline(matrixRowStringStream, matrixEntry,
+                    ','))  // here we read pieces of the stream
+                            // matrixRowStringStream until every comma, and store
+                            // the resulting character into the matrixEntry
+      {
+        matrixEntries.push_back(stod(
+            matrixEntry));  // here we convert the string to double and fill in
+                            // the row vector storing all the matrix entries
+      }
+      matrixRowNumber++;  // update the column numbers
     }
-    else {
-      euler[1] = -1.57 - std::sin(2.0 * 3.1415*(phase_-max_phase_/4)/max_phase_) * 1.57;
-      reference_[2] = 0.45 - 0.2 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
+
+    // here we convet the vector variable into the matrix and return the resulting
+    // object, note that matrixEntries.data() is the pointer to the first memory
+    // location at which the entries of the vector matrixEntries are stored;
+    return Eigen::Map<
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(
+        matrixEntries.data(), matrixRowNumber,
+        matrixEntries.size() / matrixRowNumber);
+  }
+
+  /**
+   * Helper function for printing an eigen vector in a format compatible with
+   * piping to a csv file
+   */
+  void print_vector_csv(const Eigen::Ref<const Eigen::VectorXd> v)
+  {
+    for (int i = 0; i < v.size(); ++i)
+    {
+      std::printf("%0.3f", v(i));
+      if (i < v.size() - 1)
+      {
+        std::printf(", ");
+      }
     }
-    euler[1] = -3.14 * phase_ / max_phase_ * 2;
-    raisim::eulerVecToQuat(euler, quat);
-    
-    reference_[3] = quat[0];
-    reference_[4] = quat[1];
-    reference_[5] = quat[2];
-    reference_[6] = quat[3];
-
-    reference_[12] = 1.5;
-    reference_[14] = 1.5;
-
-    if (phase_ < max_phase_ / 4){
-      reference_[7+4] = 0.65 + 0.92 * std::sin(2.0*3.1415*phase_/max_phase_);
-      reference_[7+6] = 0.65 + 0.92 * std::sin(2.0*3.1415*phase_/max_phase_);
-      // reference_[12] = -2.0 + 2.0 * std::sin(2.0*3.1415*phase_/max_phase_);
-      // reference_[14] = -2.0 + 2.0 * std::sin(2.0*3.1415*phase_/max_phase_);
-
-      reference_[7] = 0.65 - 2.22 * std::sin(2.0*3.1415*phase_/max_phase_);
-      reference_[9] = 0.65 - 2.22 * std::sin(2.0*3.1415*phase_/max_phase_);
-      reference_[8] = -1.5 + 1.5 * std::sin(2.0*3.1415*phase_/max_phase_);
-      reference_[10] = -1.5 + 1.5 * std::sin(2.0*3.1415*phase_/max_phase_);
-    }
-    else {
-      reference_[7+4] = -1.57 + 0.92 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-      reference_[7+6] = -1.57 + 0.92 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-      // reference_[12] = 0.0 + 2.0 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-      // reference_[14] = 0.0 + 2.0 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-
-      reference_[7] = -1.57 - 2.22 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-      reference_[9] = -1.57 - 2.22 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-      reference_[8] = 0.0 + 1.5 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-      reference_[10] = 0.0 + 1.5 * std::sin(2.0*3.1415*(phase_-max_phase_/4)/max_phase_);
-    }
-    reference_[11] = -0.65 + (3.79-0.65)*phase_/max_phase_*2;
-    reference_[13] = -0.65 + (3.79-0.65)*phase_/max_phase_*2;
-
-    if (flip_obs_) {
-      reference_[7] = 3.1415 - reference_[7];
-      reference_[9] = 3.1415 - reference_[9];
-      reference_[11] = 3.1415 - reference_[11];
-      reference_[13] = 3.1415 - reference_[13];
-      reference_[8] = -reference_[8]; reference_[10] = -reference_[10]; reference_[12] = -reference_[12]; reference_[14] = -reference_[14];
-      euler[1] += 3.14;
-      raisim::eulerVecToQuat(euler, quat);
-      reference_[3] = quat[0];
-      reference_[4] = quat[1];
-      reference_[5] = quat[2];
-      reference_[6] = quat[3];
-    }
+    std::printf("\n");
   }
 
  private:
+  // simulation variables
   int gcDim_, gvDim_, nJoints_;
+  int sensorDim_, horizon_;
   bool visualizable_ = false;
-  bool flip_obs_ = false;
+  bool disable_termination_;
   raisim::ArticulatedSystem* solo8_;
-  Eigen::VectorXd gc_init_, gv_init_, gc_, gv_, pTarget_, pTarget12_, vTarget_;
-  Eigen::VectorXd reference_;
-  int phase_ = 0;
-  int max_phase_ = 60;
-  int sim_step_ = 0;
-  int max_sim_step_ = 300;
-  double total_reward_ = 0;
-  double terminalRewardCoeff_ = 0.;
-  double speed = 0.0;
-  Eigen::VectorXd actionMean_, actionStd_, obDouble_;
+  Eigen::VectorXd gc_init_, gv_init_, gc_, gv_, pTarget_, pTarget12_, vTarget_, torqueFeedforward_;
+  Eigen::VectorXd torqueCommand_;
+  Eigen::VectorXd action_prev_;
+  Eigen::VectorXd sensor_history_;
+  Eigen::VectorXd action_history_;
+  int phase_;
+  int max_phase_;
+  int sim_step_;
+  int max_sim_step_;
+  double total_reward_;
+  double terminalRewardCoeff_;
+  Eigen::VectorXd actionStd_, obDouble_;
   Eigen::Vector3d bodyLinearVel_, bodyAngularVel_;
   std::set<size_t> footIndices_;
-  int mode_ = 0;
+  Eigen::VectorXd sensor_reading_;
+  // randomization variables
+  double massMean_;
+  double massStd_;
+  std::uniform_int_distribution<int> phaseDistribution_;
+  std::normal_distribution<double> frictionDistribution_;
+  std::normal_distribution<double> restitutionDistribution_;
+  std::normal_distribution<double> massDistribution_;
+  std::normal_distribution<double> torqueScaleDistribution_;
+  std::normal_distribution<double> jointOffsetDistribution_;
+  // std::uniform_real_distribution<double> imuDriftDistribution_;
+  double torque_scale_;
+  Vector8d joint_offset_;
+  // double imu_drift_angle_;
+  thread_local static std::mt19937 gen_;
+  // reference trajectory
+  Eigen::MatrixXd ref_traj_;
+  Eigen::MatrixXi ref_contact_state_traj_;
+  double ref_t_;
+  Eigen::Vector3d ref_body_pos_;
+  Eigen::Vector4d ref_body_quat_;
+  Eigen::Vector3d ref_body_lin_vel_;
+  Eigen::Vector3d ref_body_ang_vel_;
+  Vector8d ref_joint_pos_;
+  Vector8d ref_joint_vel_;
+  Vector8d ref_joint_torque_;
+  Eigen::Vector4i ref_contact_state_;
+  // reward and termination calculation
+  double position_std_;
+  double orientation_std_;
+  double joint_std_;
+  double action_diff_std_;
+  double max_torque_std_;
+  double position_error_sq_;
+  double orientation_error_sq_;
+  double joint_error_sq_;
+  double action_diff_sq_;
+  double max_torque_;
 };
+thread_local std::mt19937 raisim::ENVIRONMENT::gen_;
 }

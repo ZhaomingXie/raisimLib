@@ -320,23 +320,24 @@ phase1 = np.loadtxt("NSM_phase/RunRandom.bvh/Phases_Standard.txt")[:, :]
 phase2 = np.loadtxt("NSM_phase/WalkTurn1.bvh/Phases_Standard.txt")[:, :]
 phase3 = np.loadtxt("NSM_phase/WalkRandom.bvh/Phases_Standard.txt")[:, :]
 phase4 = np.loadtxt("NSM_phase/WalkSideBack1.bvh/Phases_Standard.txt")[:, :]
+phase5 = np.loadtxt("NSM_phase/RunSideBack1.bvh/Phases_Standard.txt")[:, :]
 
-root_pos1, root_rot1, root_linear_vel1, root_angular_vel1, store_data1, bone_velocity1, local_matrix1, features1, bone_orientation1, phase1 = process_mocap("../../../../../Downloads/MotionCapture/Mocap/Loco/RunRandom.bvh", phase1)
-root_pos2, root_rot2, root_linear_vel2, root_angular_vel2, store_data2, bone_velocity2, local_matrix2, features2, bone_orientation2, phase2 = process_mocap("../../../../../Downloads/MotionCapture/Mocap/Loco/WalkTurn1.bvh", phase2)
-root_pos3, root_rot3, root_linear_vel3, root_angular_vel3, store_data3, bone_velocity3, local_matrix3, features3, bone_orientation3, phase3 = process_mocap("../../../../../Downloads/MotionCapture/Mocap/Loco/WalkRandom.bvh", phase3)
-root_pos4, root_rot4, root_linear_vel4, root_angular_vel4, store_data4, bone_velocity4, local_matrix4, features4, bone_orientation4, phase4 = process_mocap("../../../../../Downloads/MotionCapture/Mocap/Loco/WalkSideBack1.bvh", phase4)
+root_pos1, root_rot1, root_linear_vel1, root_angular_vel1, store_data1, bone_velocity1, local_matrix1, features1, bone_orientation1, phase1 = process_mocap("Loco/RunRandom.bvh", phase1)
+root_pos2, root_rot2, root_linear_vel2, root_angular_vel2, store_data2, bone_velocity2, local_matrix2, features2, bone_orientation2, phase2 = process_mocap("Loco/WalkTurn1.bvh", phase2)
+root_pos3, root_rot3, root_linear_vel3, root_angular_vel3, store_data3, bone_velocity3, local_matrix3, features3, bone_orientation3, phase3 = process_mocap("Loco/WalkRandom.bvh", phase3)
+root_pos4, root_rot4, root_linear_vel4, root_angular_vel4, store_data4, bone_velocity4, local_matrix4, features4, bone_orientation4, phase4 = process_mocap("Loco/WalkSideBack1.bvh", phase4)
+root_pos5, root_rot5, root_linear_vel5, root_angular_vel5, store_data5, bone_velocity5, local_matrix5, features5, bone_orientation5, phase5 = process_mocap("Loco/RunSideBack1.bvh", phase5)
 
-
-root_pos = np.concatenate((root_pos1, root_pos2, root_pos3, root_pos4))
-root_rot = np.concatenate((root_rot1, root_rot2, root_rot3, root_rot4))
-root_linear_vel = np.concatenate((root_linear_vel1, root_linear_vel2, root_linear_vel3, root_linear_vel4))
-root_angular_vel = np.concatenate((root_angular_vel1, root_angular_vel2, root_angular_vel3, root_angular_vel4))
-store_data = np.concatenate((store_data1, store_data2, store_data3, store_data4))
-bone_velocity = np.concatenate((bone_velocity1, bone_velocity2, bone_velocity3, bone_velocity4))
-local_matrix = np.concatenate((local_matrix1, local_matrix2, local_matrix3, local_matrix4))
-bone_orientation = np.concatenate((bone_orientation1, bone_orientation2, bone_orientation3, bone_orientation4))
-phase = np.concatenate((phase1, phase2, phase3, phase4))
-features = np.concatenate((features1, features2, features3, features4))
+root_pos = np.concatenate((root_pos1, root_pos2, root_pos3, root_pos4, root_pos5))
+root_rot = np.concatenate((root_rot1, root_rot2, root_rot3, root_rot4, root_rot5))
+root_linear_vel = np.concatenate((root_linear_vel1, root_linear_vel2, root_linear_vel3, root_linear_vel4, root_linear_vel5))
+root_angular_vel = np.concatenate((root_angular_vel1, root_angular_vel2, root_angular_vel3, root_angular_vel4, root_angular_vel5))
+store_data = np.concatenate((store_data1, store_data2, store_data3, store_data4, store_data5))
+bone_velocity = np.concatenate((bone_velocity1, bone_velocity2, bone_velocity3, bone_velocity4, bone_velocity5))
+local_matrix = np.concatenate((local_matrix1, local_matrix2, local_matrix3, local_matrix4, local_matrix5))
+bone_orientation = np.concatenate((bone_orientation1, bone_orientation2, bone_orientation3, bone_orientation4, bone_orientation5))
+phase = np.concatenate((phase1, phase2, phase3, phase4, phase5))
+features = np.concatenate((features1, features2, features3, features4, features5))
 num_frames = root_pos.shape[0]
 
 print(features.shape, local_matrix.shape)
@@ -382,7 +383,7 @@ world_vel = np.zeros(3)
 
 #kd tree query
 current_root_pose = np.zeros(3)
-desired_root_linear_velocity = np.array([2, 0, 2])
+desired_root_linear_velocity = np.array([0, 0, 2])
 current_bone_pos = store_data[0, :, :].copy()
 current_bone_velocity = bone_velocity[0, :, :].copy()
 current_root_orientation = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
@@ -396,13 +397,16 @@ frame_counter = 0
 previous_reference =  np.array([0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1.,
 	 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1.,
 	 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1.,
-	 0., 0., 0.,]) 
+	 0., 0., 0.,])
+
+save_phase = np.zeros((200, 6))
+save_time = 0
 while True:
 	dist, ind = motion_matching_query(tree, feature_mean, feature_std, 
 		current_root_pose, current_root_orientation, current_bone_pos, current_bone_velocity, current_phase, 
 		desired_root_linear_velocity)
-	print(dist, ind)
-	for t in range(30):
+	# print(dist, ind)
+	for t in range(5):
 		# current_root_pose += desired_root_linear_velocity / 10
 		# current_root_orientation = current_root_orientation.dot(desired_root_delta_orientation)
 		
@@ -428,6 +432,20 @@ while True:
 		# if (frame_counter == save_frames):
 		# 	with open("reference.npy", 'wb') as f:
 		# 		np.save(f, save_reference)
+
+		print("phase ", ind[0,0], current_phase[0:6])
+		save_phase[save_time, :] = current_phase[0:6]
+		save_time += 1
+		if save_time == 200:
+			import matplotlib.pyplot as plt
+			fig = plt.figure()
+			for j in range(3):
+				ax = fig.add_subplot(3,1,j+1)
+				phase_amp = np.sqrt(save_phase[:, j * 2]**2 + save_phase[:, j*2+1]**2)
+				phase_offset = np.arctan2(save_phase[:, j*2]/phase_amp[:], save_phase[:, j*2+1]/phase_amp[:])
+				ax.plot(phase_amp)
+			plt.show()
+			save_time = 0
 
 		world.integrate()
 		import time; time.sleep(0.016)

@@ -47,6 +47,8 @@ class VectorizedEnvironment {
       rewardInformation_.push_back(environments_.back()->getRewards().getStdMap());
     }
 
+    setEnvironmentTask();
+
     setSeed(0);
 
     for (int i = 0; i < num_envs_; i++) {
@@ -193,10 +195,10 @@ class VectorizedEnvironment {
     float terminalReward = 0;
     done[agentId] = environments_[agentId]->isTerminalState(terminalReward);
 
-    if (done[agentId]) {
-      environments_[agentId]->reset();
-      reward[agentId] += terminalReward;
-    }
+    // if (done[agentId]) {
+    //   environments_[agentId]->reset();
+    //   reward[agentId] += terminalReward;
+    // }
   }
 
   std::vector<ChildEnvironment *> environments_;
