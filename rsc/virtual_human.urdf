@@ -617,13 +617,12 @@
       <axis xyz="1 0 0"/>
     </joint>
 
-    <joint name="lwrist" type="fixed">
-      <!-- <origin xyz="0.24571 0.0127 -0.00737" rpy="0 0 0"/> -->
+    <!-- <joint name="lwrist" type="fixed">
       <origin xyz="0.24571 0.0 0.0" rpy="0 0 0"/>
       <parent link="lelbow"/>
       <child link="lwrist"/>
       <axis xyz="1 0 0"/>
-    </joint>
+    </joint> -->
 
     <joint name="rclavicle" type="spherical">
       <origin xyz="-0.08295 0.11247 -0.02371" rpy="0 0 0"/>
@@ -645,14 +644,22 @@
       <parent link="rshoulder"/>
       <child link="relbow"/>
       <axis xyz="1 0 0"/>
-    </joint>    
+    </joint>  
 
-    <joint name="rwrist" type="fixed">
-      <!-- <origin xyz="-0.24911 0.00679 -0.00603" rpy="0 0 0"/> -->
+    <joint name="lwrist" type="revolute">
+      <origin xyz="0.24571 0.0 0.0" rpy="0 0 0"/>
+      <parent link="lelbow"/>
+      <child link="lwrist"/>
+      <limit effort="50.0" lower="-1.57" upper="1.57" velocity="100.5"/>
+      <axis xyz="0 0 1"/>
+    </joint>
+
+    <joint name="rwrist" type="revolute">
       <origin xyz="-0.24911 0.0 0.0" rpy="0 0 0"/>
       <parent link="relbow"/>
       <child link="rwrist"/>
-      <axis xyz="1 0 0"/>
+      <limit effort="50.0" lower="-1.57" upper="1.57" velocity="100.5"/>
+      <axis xyz="0 0 1"/>
     </joint> 
 
   </robot>
